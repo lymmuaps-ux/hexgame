@@ -29,14 +29,36 @@ function wrapConn(conn: DataConnection): Link {
   };
 }
 
+/**
+ * ICE servers. STUN finds each browser's public address; TURN relays the traffic when
+ * routers / mobile networks block a direct connection (the usual cause of join timeouts).
+ * Use your own TURN server by setting these at build time (e.g. a free Metered.ca account):
+ *   VITE_TURN_URLS="turn:a.relay.metered.ca:80,turn:a.relay.metered.ca:443?transport=tcp"
+ *   VITE_TURN_USERNAME=...  VITE_TURN_CREDENTIAL=...
+ */
+const env = import.meta.env ?? {};
+const turn: RTCIceServer = env.VITE_TURN_URLS
+  ? { urls: String(env.VITE_TURN_URLS).split(','), username: env.VITE_TURN_USERNAME, credential: env.VITE_TURN_CREDENTIAL }
+  : {
+      // public community relay (Open Relay Project) – fine for casual games
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    };
 const ICE = {
   config: {
     iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+      turn,
     ],
   },
 };
+
+const JOIN_TIMEOUT_MS = 30000;
 
 export const peerTransport: Transport = {
   host(code, onLink) {
@@ -66,10 +88,23 @@ export const peerTransport: Transport = {
       );
       peer.on('open', () => {
         const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' });
-        const t = setTimeout(() => reject(new Error('Could not reach the host (timeout).')), 15000);
+        const t = setTimeout(() => {
+          const pc: RTCPeerConnection | undefined = conn.peerConnection;
+          const ice = pc?.iceConnectionState ?? 'unknown';
+          const why =
+            !pc || ice === 'new'
+              ? 'The host did not answer – make sure the host tab is open and in the foreground, then try again.'
+              : `A direct connection could not be made (network state: ${ice}). One of the networks is blocking peer-to-peer traffic – try another network (e.g. Wi-Fi instead of mobile data).`;
+          peer.destroy();
+          reject(new Error(`Could not reach the host. ${why}`));
+        }, JOIN_TIMEOUT_MS);
         conn.on('open', () => {
           clearTimeout(t);
           resolve(wrapConn(conn));
+        });
+        conn.on('error', (e: any) => {
+          clearTimeout(t);
+          reject(new Error(`Connection error: ${e?.message ?? e}`));
         });
       });
     });

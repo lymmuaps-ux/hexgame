@@ -73,7 +73,7 @@ function renderHome(error = '') {
 }
 
 async function start(fn: () => Promise<Session>) {
-  app.innerHTML = `<div class="lobby"><div class="panel"><h2>Connecting…</h2><div class="spinner"></div></div></div>`;
+  app.innerHTML = `<div class="lobby"><div class="panel"><h2>Connecting…</h2><div class="spinner"></div><p class="hint">This can take up to 30 seconds on some networks.</p></div></div>`;
   try {
     session = await fn();
     if (pendingState) onState(pendingState);
