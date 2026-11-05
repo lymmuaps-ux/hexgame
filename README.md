@@ -49,6 +49,8 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/game/rules.ts` | the rules engine (pure reducer, runs on the host) |
 | `src/net/` | MQTT relay (default), PeerJS and BroadcastChannel transports; host & client sessions |
 | `src/render/scene.ts` | three.js island, pieces, click targets |
+| `src/render/tiles.ts` | detailed terrain tiles (forests, windmills, mountains, mines, oasis…) |
+| `src/render/island.ts` | beach, shallows, surf, palms, lighthouse, boats, seagulls |
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
 | `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |

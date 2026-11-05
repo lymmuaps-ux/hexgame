@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const SIZE = 0.42;
-const GROUND = 0.2 + SIZE / 2; // tile tops are at y = 0.2
+const GROUND = 0.22 + SIZE / 2; // tile tops are at y = 0.22
 const FLIGHT = 1.3; // seconds in the air / tumbling
 const HOLD = 2.4; // seconds the dice stay visible after landing
 const FADE = 0.35;

@@ -3,7 +3,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GEO, HEX_SIZE } from '../game/board';
 import { Dice } from './dice';
 import { Clouds, Ocean, Particles } from './effects';
-import { GameState, RES_INFO, TileType } from '../game/types';
+import { IslandDecor } from './island';
+import { decorateTile, tileBase } from './tiles';
+import { GameState, RES_INFO } from '../game/types';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 export interface Selectable {
@@ -13,22 +15,7 @@ export interface Selectable {
   style?: 'settlement' | 'city';
 }
 
-const TILE_COLORS: Record<TileType, number> = {
-  timber: 0x3f8f3a,
-  clay: 0xc96a3a,
-  wool: 0xa5d66b,
-  grain: 0xe8c547,
-  ore: 0x9aa0aa,
-  desert: 0xe3cf9a,
-};
 
-function seeded(seed: number) {
-  let s = seed * 9301 + 49297;
-  return () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-}
 
 const std = (color: number | string, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
   new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
@@ -96,88 +83,6 @@ function tokenTexture(n: number) {
 
 // ----------------------------------------------------------- decorations
 
-function tree(rng: () => number) {
-  const g = new THREE.Group();
-  const h = 0.3 + rng() * 0.15;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.1, 5), std(0x6d4c2f));
-  trunk.position.y = 0.05;
-  const top = new THREE.Mesh(new THREE.ConeGeometry(0.11 + rng() * 0.04, h, 6), std(rng() > 0.5 ? 0x1f5e24 : 0x2a7030));
-  top.position.y = 0.1 + h / 2;
-  g.add(trunk, top);
-  return g;
-}
-function bricks(rng: () => number) {
-  const g = new THREE.Group();
-  const mat = std(0xa4471f);
-  for (let i = 0; i < 3; i++)
-    for (let j = 0; j < 3 - i; j++) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.07), mat);
-      b.position.set((j - (2 - i) / 2) * 0.13, 0.03 + i * 0.062, 0);
-      g.add(b);
-    }
-  g.rotation.y = rng() * Math.PI;
-  return g;
-}
-function sheep(rng: () => number) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 0), std(0xfafafa));
-  body.scale.set(1.3, 0.9, 1);
-  body.position.y = 0.08;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), std(0x333333));
-  head.position.set(0.1, 0.1, 0);
-  g.add(body, head);
-  g.rotation.y = rng() * Math.PI * 2;
-  return g;
-}
-function wheat(rng: () => number) {
-  const g = new THREE.Group();
-  const mat = std(0xc99a1b);
-  for (let i = 0; i < 6; i++) {
-    const s = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.16 + rng() * 0.06, 4), mat);
-    s.position.set((rng() - 0.5) * 0.18, 0.09, (rng() - 0.5) * 0.18);
-    g.add(s);
-  }
-  return g;
-}
-function rock(rng: () => number) {
-  const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.1 + rng() * 0.1, 0), std(rng() > 0.5 ? 0x6e737c : 0x5a5f68));
-  m.position.y = 0.06;
-  m.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-  m.scale.y = 0.8 + rng() * 0.6;
-  return m;
-}
-function cactus() {
-  const g = new THREE.Group();
-  const mat = std(0x5d8f3c);
-  const t = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.25, 6), mat);
-  t.position.y = 0.125;
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 6), mat);
-  arm.position.set(0.05, 0.15, 0);
-  g.add(t, arm);
-  return g;
-}
-
-function decorate(type: TileType, id: number): THREE.Group {
-  const rng = seeded(id + 7);
-  const g = new THREE.Group();
-  const count = { timber: 7, clay: 3, wool: 4, grain: 5, ore: 4, desert: 2 }[type];
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2 + rng() * 0.5;
-    const rad = 0.48 + rng() * 0.28;
-    const d =
-      type === 'timber' ? tree(rng)
-      : type === 'clay' ? bricks(rng)
-      : type === 'wool' ? sheep(rng)
-      : type === 'grain' ? wheat(rng)
-      : type === 'ore' ? rock(rng)
-      : cactus();
-    d.position.x += Math.cos(ang) * rad;
-    d.position.z += Math.sin(ang) * rad;
-    g.add(d);
-  }
-  return g;
-}
-
 // ---------------------------------------------------------------- pieces
 
 function settlementMesh(color: string) {
@@ -244,6 +149,8 @@ export class BoardView {
   private clouds = new Clouds();
   private particles = new Particles();
   private raiderLanding = false;
+  private decor: IslandDecor | null = null;
+  private spinners: THREE.Object3D[] = [];
   private ray = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private hovered: THREE.Object3D | null = null;
@@ -385,6 +292,8 @@ export class BoardView {
       return p.t < 1;
     });
     this.ocean.tick(t);
+    this.decor?.tick(t, dt);
+    for (const sp of this.spinners) sp.rotation.z += sp.userData.spin * dt;
     this.clouds.tick(dt);
     this.particles.tick(dt);
     if (this.raiderLanding && this.raider.position.distanceTo(this.raiderTarget) < 0.06) {
@@ -405,7 +314,7 @@ export class BoardView {
     for (const id of c.hexes) {
       const tok = this.tokens.get(id);
       if (!tok) continue;
-      tok.mesh.position.y = 0.225 + 0.22 * Math.abs(Math.sin(k * Math.PI * 4)) * (1 - k);
+      tok.mesh.position.y = 0.245 + 0.22 * Math.abs(Math.sin(k * Math.PI * 4)) * (1 - k);
       tok.mesh.scale.setScalar(1 + 0.3 * (1 - k));
       tok.mat.emissiveIntensity = 0.9 * (1 - k);
     }
@@ -415,28 +324,21 @@ export class BoardView {
   private buildBoard(s: GameState) {
     this.boardGroup.clear();
     this.tokens.clear();
-    // sandy island base, a large hexagon around the tiles
-    const sand = new THREE.Mesh(new THREE.CylinderGeometry(5.25, 5.6, 0.25, 6), std(0xe6d29a));
-    sand.rotation.y = Math.PI / 6;
-    sand.position.y = -0.1;
-    sand.receiveShadow = true;
-    this.boardGroup.add(sand);
+    this.spinners = [];
 
     for (const h of s.hexes) {
       const c = GEO.hexCoords[h.id];
       const g = new THREE.Group();
       g.position.set(c.x, 0, c.z);
-      const tile = new THREE.Mesh(new THREE.CylinderGeometry(HEX_SIZE * 0.97, HEX_SIZE, 0.2, 6), std(TILE_COLORS[h.type]));
-      tile.position.y = 0.1;
-      tile.receiveShadow = true;
-      const deco = decorate(h.type, h.id);
-      deco.position.y = 0.2;
-      g.add(tile, shadow(deco));
+      const deco = decorateTile(h.type, h.id);
+      deco.position.y = 0.22;
+      deco.traverse((o) => o.userData.spin && this.spinners.push(o));
+      g.add(tileBase(h.type), deco);
       if (h.number) {
         const top = new THREE.MeshStandardMaterial({ map: tokenTexture(h.number), roughness: 0.7, emissive: 0xffc23d, emissiveIntensity: 0 });
         const side = std(0xd9c9a3);
         const tok = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32), [side, top, side]);
-        tok.position.y = 0.225;
+        tok.position.y = 0.245;
         tok.rotation.y = Math.PI / 2;
         tok.castShadow = true;
         g.add(tok);
@@ -445,13 +347,30 @@ export class BoardView {
       this.boardGroup.add(g);
     }
 
+    const docks: { x: number; z: number }[] = [];
     for (const port of s.ports) {
       const e = GEO.edges[port.edge];
       const hc = GEO.hexCoords[e.hexes[0]];
       const dir = new THREE.Vector2(e.x - hc.x, e.z - hc.z).normalize();
       const px = e.x + dir.x * 0.55, pz = e.z + dir.y * 0.55;
-      const dock = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.42), std(0x8a5a33));
-      dock.position.set(px, 0.02, pz);
+      docks.push({ x: px, z: pz });
+      // little wooden pier on posts
+      const dock = new THREE.Group();
+      dock.position.set(px, 0, pz);
+      dock.rotation.y = -Math.atan2(dir.y, dir.x);
+      for (let k = 0; k < 5; k++) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.42), std(k % 2 ? 0x8a5a33 : 0x9b6b3e));
+        plank.position.set(-0.17 + k * 0.085, 0.07, 0);
+        dock.add(plank);
+      }
+      for (const [x, z] of [[-0.19, -0.19], [-0.19, 0.19], [0.19, -0.19], [0.19, 0.19]]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.22, 6), std(0x6d4c2f));
+        post.position.set(x, -0.02, z);
+        dock.add(post);
+      }
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 8), std(0x7a5634));
+      barrel.position.set(0.12, 0.12, 0.13);
+      dock.add(barrel);
       this.boardGroup.add(shadow(dock));
       for (const v of [e.a, e.b]) {
         const vv = GEO.vertices[v];
@@ -467,6 +386,10 @@ export class BoardView {
       sprite.position.set(px, 0.5, pz);
       this.boardGroup.add(sprite);
     }
+    // beach, shallows, palms, boats… seeded by the board so everyone sees the same island
+    const seed = s.hexes.reduce((h, x, n) => (h * 31 + x.type.charCodeAt(0) * (n + 1) + (x.number ?? 0)) % 100000, 7);
+    this.decor = new IslandDecor(docks, seed);
+    this.boardGroup.add(this.decor.group);
   }
 
   update(s: GameState, sel: Selectable | null) {
