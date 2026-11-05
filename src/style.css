@@ -207,3 +207,20 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
   100% { opacity: 0; transform: translate(-50%, -60%) scale(0.95); }
 }
 @media (prefers-reduced-motion: reduce) { .rollpop, .dice.rolling span { animation-duration: 0.01s; } }
+
+/* resource hand-out */
+.flycard {
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; width: 40px; height: 54px; border-radius: 8px;
+  background: linear-gradient(160deg, #fff, color-mix(in srgb, var(--c) 55%, white)); border: 2px solid var(--c);
+  box-shadow: 0 0 0 3px var(--pc), 0 8px 18px rgba(0,0,0,.35); display: grid; place-items: center; font-size: 1.4rem;
+  will-change: transform;
+}
+.bump { animation: bump 0.35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.14); box-shadow: 0 0 0 4px var(--accent), 0 6px 16px rgba(0,0,0,.25); } }
+.player.active.bump { animation-name: bump-active; }
+@keyframes bump-active { 40% { transform: translateX(6px) scale(1.08); } }
+.plusone {
+  position: absolute; z-index: 7; pointer-events: none; transform: translate(-50%, -100%); font-weight: 800; color: #fff;
+  text-shadow: 0 2px 6px rgba(0,0,0,.6); animation: plusone 0.9s ease-out forwards; white-space: nowrap;
+}
+@keyframes plusone { from { opacity: 1; transform: translate(-50%, -60%); } to { opacity: 0; transform: translate(-50%, -190%); } }

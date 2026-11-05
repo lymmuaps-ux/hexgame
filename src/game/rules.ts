@@ -1,6 +1,6 @@
 import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import {
-  Action, COSTS, DEV_INFO, GameState, PLAYER_COLORS, Player, RESOURCES, RES_INFO, ResMap,
+  Action, COSTS, DEV_INFO, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, WIN_POINTS, emptyRes, totalRes,
 } from './types';
 
@@ -180,11 +180,15 @@ function checkWin(s: GameState) {
 
 function produce(s: GameState, roll: number) {
   const gains = s.players.map(() => emptyRes());
+  const items: ProductionItem[] = [];
   s.hexes.forEach((h) => {
     if (h.number !== roll || h.id === s.raider || h.type === 'desert') return;
     for (const v of GEO.hexVertices[h.id]) {
       const b = s.buildings[v];
-      if (b) gains[b.owner][h.type] += b.kind === 'city' ? 2 : 1;
+      if (!b) continue;
+      const n = b.kind === 'city' ? 2 : 1;
+      gains[b.owner][h.type] += n;
+      items.push({ p: b.owner, hex: h.id, r: h.type, n });
     }
   });
   for (const r of RESOURCES) {
@@ -197,6 +201,16 @@ function produce(s: GameState, roll: number) {
       } else gains.forEach((g) => (g[r] = Math.min(g[r], s.bank[r])));
     }
   }
+  // trim the per-tile record to what was actually paid out
+  const left = gains.map((g) => ({ ...g }));
+  const paid: ProductionItem[] = [];
+  for (const it of items) {
+    const n = Math.min(it.n, left[it.p][it.r]);
+    if (n <= 0) continue;
+    left[it.p][it.r] -= n;
+    paid.push({ ...it, n });
+  }
+  s.production = { id: (s.production?.id ?? 0) + 1, items: paid };
   gains.forEach((g, i) => {
     if (totalRes(g) === 0) return;
     RESOURCES.forEach((r) => {
@@ -291,10 +305,14 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.setupNeed = 'road';
       if (s.setupIndex >= s.players.length) {
         const g = emptyRes();
+        const items: ProductionItem[] = [];
         for (const h of GEO.vertices[a.vertex].hexes) {
           const t = s.hexes[h].type;
-          if (t !== 'desert') g[t]++;
+          if (t === 'desert') continue;
+          g[t]++;
+          items.push({ p, hex: h, r: t, n: 1 });
         }
+        s.production = { id: (s.production?.id ?? 0) + 1, items };
         RESOURCES.forEach((r) => { me.hand[r] += g[r]; s.bank[r] -= g[r]; });
         log(s, `${me.name} founds a settlement and gathers ${fmtRes(g)}`);
       } else log(s, `${me.name} founds a settlement.`);

@@ -78,6 +78,13 @@ export interface TradeOffer {
   declined: number[];
 }
 
+export interface ProductionItem {
+  p: number;
+  hex: number;
+  r: Resource;
+  n: number;
+}
+
 export interface GameState {
   phase: 'setup' | 'main' | 'ended';
   players: Player[];
@@ -97,6 +104,8 @@ export interface GameState {
   rollId?: number;
   /** who made the latest roll */
   rolledBy?: number;
+  /** the latest batch of resources handed out (by a roll or a setup settlement), for animation */
+  production?: { id: number; items: ProductionItem[] };
   hexes: Hex[];
   ports: Port[];
   raider: number;

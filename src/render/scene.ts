@@ -301,6 +301,14 @@ export class BoardView {
     this.renderer.setAnimationLoop((t) => this.tick(t));
   }
 
+  /** screen position (CSS px) of a tile's number token */
+  hexScreenPos(hex: number): { x: number; y: number } {
+    const c = GEO.hexCoords[hex];
+    const v = new THREE.Vector3(c.x, 0.3, c.z).project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  }
+
   /** screen position (CSS px) of the n-th highlighted target – used by tests */
   highlightScreenPos(n: number): { x: number; y: number; id: number } | null {
     const h = this.highlights.children[n];

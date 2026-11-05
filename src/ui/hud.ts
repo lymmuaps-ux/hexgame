@@ -35,6 +35,13 @@ export class Hud {
   private seenRoll: number | undefined | null = null;
   private rolling: GameState | null = null;
   private rollTimer = 0;
+  // resource hand-out animation: cards still "in flight" are not shown in the counts yet
+  private seenProd: number | undefined | null = null;
+  private incoming: ResMap[] = [];
+  private flights: { p: number; hex: number; r: Resource }[] = [];
+  private flying = false;
+  /** where a tile is on screen (provided by the 3D board) */
+  hexScreenPos: (hex: number) => { x: number; y: number } = () => ({ x: innerWidth / 2, y: innerHeight / 2 });
   onChange: () => void = () => {};
 
   constructor(private root: HTMLElement, private seat: number, private act: (a: Action) => void, private code: string) {
@@ -61,6 +68,11 @@ export class Hud {
       return;
     }
     this.state = s;
+    if (this.seenProd === null) this.seenProd = s.production?.id;
+    else if (s.production && s.production.id !== this.seenProd) {
+      this.seenProd = s.production.id;
+      this.dealOut(s);
+    }
     // drop modes that no longer make sense
     if (s.current !== this.seat || s.stage !== 'actions') this.mode = null;
     if (this.modal?.kind === 'trade' && (s.current !== this.seat || s.stage !== 'actions')) this.modal = null;
@@ -88,6 +100,88 @@ export class Hud {
     if (who) el.style.setProperty('--pc', who.color);
     (this.root.parentElement ?? document.body).appendChild(el);
     setTimeout(() => el.remove(), 2300);
+  }
+
+  /** queue one flying card per resource handed out, in turn order */
+  private dealOut(s: GameState) {
+    const items = [...(s.production?.items ?? [])].sort((a, b) => a.p - b.p || a.hex - b.hex);
+    if (!items.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    for (const it of items) {
+      for (let k = 0; k < it.n; k++) {
+        this.incoming[it.p] ??= emptyRes();
+        this.incoming[it.p][it.r]++;
+        this.flights.push({ p: it.p, hex: it.hex, r: it.r });
+      }
+    }
+    if (!this.flying) this.nextFlight();
+  }
+
+  private nextFlight() {
+    const f = this.flights.shift();
+    if (!f) {
+      this.flying = false;
+      return;
+    }
+    this.flying = true;
+    // keep the whole deal to roughly 3 seconds even when lots of cards come out
+    const gap = Math.max(160, Math.min(420, 3000 / (this.flights.length + 1)));
+    this.flyCard(f);
+    setTimeout(() => this.nextFlight(), gap);
+  }
+
+  private flyCard(f: { p: number; hex: number; r: Resource }) {
+    const layer = this.root.parentElement ?? document.body;
+    const targetSel = f.p === this.seat ? `.hand .card[data-r="${f.r}"]` : `.player[data-p="${f.p}"]`;
+    const target = this.root.querySelector<HTMLElement>(targetSel);
+    let done = false;
+    const arrive = () => {
+      if (done) return;
+      done = true;
+      el.remove();
+      const inc = this.incoming[f.p];
+      if (inc && inc[f.r] > 0) inc[f.r]--;
+      this.render();
+      const t = this.root.querySelector<HTMLElement>(targetSel);
+      if (t) {
+        t.classList.remove('bump');
+        void t.offsetWidth;
+        t.classList.add('bump');
+        const plus = document.createElement('div');
+        plus.className = 'plusone';
+        plus.textContent = `+1 ${RES_INFO[f.r].icon}`;
+        const r = t.getBoundingClientRect();
+        plus.style.left = `${r.left + r.width / 2}px`;
+        plus.style.top = `${r.top}px`;
+        layer.appendChild(plus);
+        setTimeout(() => plus.remove(), 900);
+      }
+    };
+    const el = document.createElement('div');
+    el.className = 'flycard';
+    el.style.setProperty('--c', RES_INFO[f.r].color);
+    el.style.setProperty('--pc', this.state?.players[f.p].color ?? '#fff');
+    el.innerHTML = `<span>${RES_INFO[f.r].icon}</span>`;
+    layer.appendChild(el);
+    const from = this.hexScreenPos(f.hex);
+    const tr = target?.getBoundingClientRect();
+    const to = tr ? { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2 } : { x: from.x, y: from.y - 120 };
+    const lift = Math.min(160, 60 + Math.hypot(to.x - from.x, to.y - from.y) * 0.25);
+    const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - lift };
+    const at = (p: { x: number; y: number }, sc: number, rot: number) =>
+      ({ transform: `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) scale(${sc}) rotate(${rot}deg)` });
+    const spin = (Math.random() - 0.5) * 40;
+    const dur = 750;
+    const anim = el.animate(
+      [
+        { ...at(from, 0.2, 0), opacity: 0 },
+        { ...at({ x: from.x, y: from.y - 40 }, 1.25, spin / 2), opacity: 1, offset: 0.22 },
+        { ...at(mid, 1.1, spin), opacity: 1, offset: 0.6 },
+        { ...at(to, 0.65, 0), opacity: 0.9 },
+      ],
+      { duration: dur, easing: 'cubic-bezier(.45,.05,.4,1)', fill: 'forwards' },
+    );
+    anim.onfinish = arrive;
+    setTimeout(arrive, dur + 400); // hidden tabs may never finish the animation
   }
 
   toast(msg: string) {
@@ -240,11 +334,11 @@ export class Hud {
         s.longestRoad.owner === i ? `<span class="badge" title="Longest Road">🛣️ ${s.longestRoad.length}</span>` : '',
         s.strongestGuard.owner === i ? `<span class="badge" title="Strongest Guard">⚔️ ${s.strongestGuard.size}</span>` : '',
       ].join('');
-      return `<div class="player ${i === s.current ? 'active' : ''}" style="--pc:${p.color}">
+      return `<div class="player ${i === s.current ? 'active' : ''}" data-p="${i}" style="--pc:${p.color}">
         <div class="pname"><span class="dot"></span>${esc(p.name)}${i === this.seat ? ' <small>(you)</small>' : ''}${p.connected ? '' : ' <small class="off">offline</small>'}</div>
         <div class="pstats">
           <span title="Victory points">⭐ ${vp}</span>
-          <span title="Resource cards">🂠 ${totalRes(p.hand)}</span>
+          <span title="Resource cards">🂠 ${Math.max(0, totalRes(p.hand) - totalRes(this.incoming[i] ?? {}))}</span>
           <span title="Fortune cards">🃏 ${p.dev.length + p.newDev.length}</span>
           <span title="Guards played">🛡️ ${p.guards}</span>
           <span title="Longest road">🛤️ ${longestRoadFor(s, i)}</span>
@@ -259,7 +353,7 @@ export class Hud {
       : '';
 
     const hand = RESOURCES.map((r) =>
-      `<div class="card" style="--c:${RES_INFO[r].color}" title="${RES_INFO[r].label}"><span>${RES_INFO[r].icon}</span><b>${me.hand[r]}</b><small>${RES_INFO[r].label}</small></div>`,
+      `<div class="card" data-r="${r}" style="--c:${RES_INFO[r].color}" title="${RES_INFO[r].label}"><span>${RES_INFO[r].icon}</span><b>${Math.max(0, me.hand[r] - (this.incoming[this.seat]?.[r] ?? 0))}</b><small>${RES_INFO[r].label}</small></div>`,
     ).join('');
 
     const devCounts = new Map<DevCard, { ready: number; fresh: number }>();

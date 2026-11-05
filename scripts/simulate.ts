@@ -44,7 +44,17 @@ for (let g = 0; g < GAMES; g++) {
   for (let step = 0; step < 20000 && s.phase !== 'ended'; step++) {
     const { p, a } = choose(s);
     const r = applyAction(s, p, a);
-    if (r.ok) s = r.state;
+    if (r.ok) {
+      if (a.type === 'roll' && r.state.dice && r.state.dice[0] + r.state.dice[1] !== 7) {
+        // the animation record must match exactly what each hand gained
+        const rec = s.players.map(() => emptyRes());
+        for (const it of r.state.production!.items) rec[it.p][it.r] += it.n;
+        r.state.players.forEach((pl, i) => RESOURCES.forEach((res) => {
+          if (pl.hand[res] - s.players[i].hand[res] !== rec[i][res]) throw new Error('production record mismatch');
+        }));
+      }
+      s = r.state;
+    }
     else if (s.phase === 'setup' || ['roll', 'moveRaider', 'steal', 'discard'].includes(s.stage)) throw new Error(`stuck: ${r.error} ${JSON.stringify(a)} stage=${s.stage}`);
     // invariants
     for (const res of RESOURCES) {
