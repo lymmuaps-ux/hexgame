@@ -8,6 +8,7 @@ import {
 } from '../game/types';
 import { Selectable } from '../render/scene';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
+import type { Chat } from './chat';
 
 type Mode = null | 'road' | 'settlement' | 'city';
 type Modal =
@@ -31,6 +32,17 @@ export class Hud {
   private discard: ResMap = emptyRes();
   private discardKey = '';
   private logOpen = innerWidth > 900;
+  /** compact left column (players + awards); defaults to compact on phones */
+  private sideMini = (() => {
+    try {
+      const v = localStorage.getItem('hexhold-side');
+      if (v) return v === 'mini';
+    } catch { /* ignore */ }
+    return innerWidth <= 760;
+  })();
+  chat: Chat | null = null;
+  // last rendered values, to animate what changed
+  private prev: { hand: Record<string, string>; vp: Record<string, number>; cards: Record<string, string>; ready: Set<string>; log: number; status: string; dice: string; modal: string } | null = null;
   private toastTimer = 0;
   // dice animation: while the dice are in the air we keep showing the pre-roll state
   private seenRoll: number | undefined | null = null;
@@ -364,6 +376,65 @@ export class Hud {
     }
   }
 
+  /** compare with the previous render and animate whatever changed */
+  private animateChanges(s: GameState) {
+    const q = <T extends Element = HTMLElement>(sel: string) => [...this.root.querySelectorAll<T & HTMLElement>(sel)];
+    const pulse = (el: Element | null | undefined, cls: string) => {
+      if (!el) return;
+      el.classList.remove(cls);
+      void (el as HTMLElement).offsetWidth;
+      el.classList.add(cls);
+    };
+    const now = {
+      hand: Object.fromEntries(q('.hand .card').map((c) => [c.dataset.r!, c.querySelector('b')?.textContent ?? ''])),
+      vp: Object.fromEntries(s.players.map((_, i) => [String(i), victoryPoints(s, i, i === this.seat)])),
+      cards: Object.fromEntries(q('.player').map((c) => [c.dataset.p!, c.querySelector('.pstats span:nth-child(2)')?.textContent ?? ''])),
+      ready: new Set(q('.build:not([disabled]):not(.blocked)').map((b) => b.dataset.v ?? b.dataset.a!)),
+      log: s.log.length,
+      status: this.root.querySelector('.status')?.textContent ?? '',
+      dice: this.root.querySelector('.dice:not(.rolling)')?.textContent ?? '',
+      modal: this.root.querySelector('.modal h3')?.textContent ?? '',
+    };
+    const prev = this.prev;
+    this.prev = now;
+    if (!prev) {
+      // first time the game screen appears: panels slide in
+      q('#top, #players, #log, #bottom').forEach((el) => el.classList.add('intro'));
+      return;
+    }
+    for (const c of q('.hand .card')) {
+      const a = Number(prev.hand[c.dataset.r!] ?? 0), b = Number(now.hand[c.dataset.r!] ?? 0);
+      if (b > a) pulse(c, 'tick-up');
+      else if (b < a) pulse(c, 'tick-down');
+    }
+    for (const c of q('.player')) {
+      const i = c.dataset.p!;
+      if (now.cards[i] !== prev.cards[i]) pulse(c.querySelector('.pstats span:nth-child(2)'), 'tick-num');
+      const gain = now.vp[i] - (prev.vp[i] ?? now.vp[i]);
+      if (gain > 0) {
+        pulse(c.querySelector('.pstats span:first-child'), 'tick-num');
+        const r = c.getBoundingClientRect();
+        const plus = document.createElement('div');
+        plus.className = 'plusone star';
+        plus.textContent = `+${gain} ⭐`;
+        plus.style.left = `${r.left + r.width / 2}px`;
+        plus.style.top = `${r.top + 10}px`;
+        this.layer().appendChild(plus);
+        setTimeout(() => plus.remove(), 900);
+      }
+    }
+    for (const b of q('.build:not([disabled]):not(.blocked)')) {
+      const k = b.dataset.v ?? b.dataset.a!;
+      if (!prev.ready.has(k)) pulse(b, 'ready');
+    }
+    const lines = q('#log .lines div');
+    const added = Math.min(lines.length, now.log - prev.log);
+    lines.slice(lines.length - Math.max(0, added)).forEach((l) => l.classList.add('new'));
+    if (now.status !== prev.status) pulse(this.root.querySelector('.status'), 'swap');
+    if (now.dice && now.dice !== prev.dice) pulse(this.root.querySelector('.dice'), 'pop');
+    if (now.modal && now.modal !== prev.modal) this.root.querySelector('.modal-bg')?.classList.add('enter');
+  }
+
   private awardsHtml(s: GameState) {
     const card = (kind: 'road' | 'guard') => {
       const owner = kind === 'road' ? s.longestRoad.owner : s.strongestGuard.owner;
@@ -490,6 +561,11 @@ export class Hud {
       case 'close': this.modal = null; break;
       case 'help': this.modal = { kind: 'help' }; break;
       case 'log': this.logOpen = !this.logOpen; break;
+      case 'chat': this.chat?.toggle(); break;
+      case 'side':
+        this.sideMini = !this.sideMini;
+        try { localStorage.setItem('hexhold-side', this.sideMini ? 'mini' : 'full'); } catch { /* ignore */ }
+        break;
       case 'copy':
         navigator.clipboard?.writeText(this.code).then(() => this.toast(t('hud.codeCopied')));
         break;
@@ -546,7 +622,7 @@ export class Hud {
         s.strongestGuard.owner === i ? `<span class="badge" title="${t('hud.strongestGuard')}">⚔️ ${s.strongestGuard.size}</span>` : '',
       ].join('');
       return `<div class="player ${i === s.current ? 'active' : ''}" data-p="${i}" style="--pc:${p.color}">
-        <div class="pname"><span class="dot"></span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
+        <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
           <span title="${t('hud.cards')}">🂠 ${Math.max(0, totalRes(p.hand) - totalRes(this.incoming[i] ?? {}))}</span>
@@ -622,9 +698,9 @@ export class Hud {
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button></div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button></div>
       </div>
-      <div id="players">${players}${s.phase === 'setup' ? '' : this.awardsHtml(s)}</div>
+      <div id="players" class="${this.sideMini ? 'mini' : ''}"><button class="sidetoggle" data-a="side" title="${t(this.sideMini ? 'side.show' : 'side.hide')}">${this.sideMini ? '👥 <span class="arr">›</span>' : '<span class="arr">‹</span>'}</button>${players}${s.phase === 'setup' ? '' : this.awardsHtml(s)}</div>
       <div id="log" class="${this.logOpen ? 'open' : ''}"><h4>${t('hud.log')}</h4><div class="lines">${log}</div></div>
       ${offer}
       <div id="bottom">
@@ -633,6 +709,7 @@ export class Hud {
       </div>
       ${this.modalHtml(s)}
 `;
+    this.animateChanges(s);
     const lines = this.root.querySelector('#log .lines');
     if (lines) lines.scrollTop = lines.scrollHeight;
   }

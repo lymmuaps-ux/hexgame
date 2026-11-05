@@ -5,18 +5,21 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'chat.title': 'Chat', 'chat.placeholder': 'Say something…', 'chat.send': 'Send',
+  'chat.empty': 'No messages yet. Say hi! 👋', 'hud.chat': 'Chat',
+  'side.hide': 'Hide panels', 'side.show': 'Show players & awards',
 
   // awards & banners
-  'award.road': 'Longest Road', 'award.guard': 'Strongest Guard', 'award.pts': '+2 points',
-  'award.unclaimed': 'Unclaimed', 'award.needRoad': 'First road of 5+ takes it', 'award.needGuard': 'First to 3 guards takes it',
-  'award.roadLen': 'road of {n}', 'award.guardSize': '{n} guards',
+  'award.road': 'Longest Road', 'award.guard': 'Largest Army', 'award.pts': '+2 points',
+  'award.unclaimed': 'Unclaimed', 'award.needRoad': 'First road of 5+ takes it', 'award.needGuard': 'First to 3 knights takes it',
+  'award.roadLen': 'road of {n}', 'award.guardSize': '{n} knights',
   'banner.yourTurn': 'Your turn!', 'banner.turnOf': "{name}'s turn",
   'banner.award': '{name} takes the {award}!', 'banner.awardLost': '{award} is up for grabs again!',
   'banner.play': '{name} plays {card}!', 'banner.buy': '{name} buys a fortune card',
   // resources, cards, pieces
   'res.timber': 'Timber', 'res.clay': 'Clay', 'res.wool': 'Wool', 'res.grain': 'Grain', 'res.ore': 'Ore',
-  'dev.guard': 'Guard', 'dev.roadworks': 'Roadworks', 'dev.harvest': 'Harvest', 'dev.embargo': 'Embargo', 'dev.monument': 'Monument',
-  'devText.guard': 'Move the Raider and steal 1 card. Counts toward Strongest Guard.',
+  'dev.guard': 'Knight', 'dev.roadworks': 'Roadworks', 'dev.harvest': 'Harvest', 'dev.embargo': 'Embargo', 'dev.monument': 'Monument',
+  'devText.guard': 'Move the Raider and steal 1 card. Counts toward Largest Army.',
   'devText.roadworks': 'Build 2 roads for free.',
   'devText.harvest': 'Take any 2 resources from the bank.',
   'devText.embargo': 'Name a resource. Every opponent gives you all of theirs.',
@@ -68,8 +71,8 @@ const en: Dict = {
   'log.harvest': '🧺 {name} plays Harvest: {cards}',
   'log.embargo': '⚖️ {name} plays Embargo on {res} and collects {n}.',
   'log.roadworks': '🛤️ {name} plays Roadworks.',
-  'log.guard': '🛡️ {name} sends a Guard.',
-  'log.strongestGuard': '⚔️ {name} now has the Strongest Guard.',
+  'log.guard': '🛡️ {name} sends a Knight.',
+  'log.strongestGuard': '⚔️ {name} now has the Largest Army.',
   'log.bankTrade': '{name} trades {n} {give} with the bank for 1 {get}',
   'log.offers': '{name} offers {give} for {get}',
   'log.turn': "— {name}'s turn —",
@@ -104,8 +107,8 @@ const en: Dict = {
   'hud.rules': 'Rules', 'hud.logTitle': 'Game log', 'hud.log': 'Log', 'hud.switchLang': 'العربية',
   'hud.you': '(you)', 'hud.offline': 'offline',
   'hud.vp': 'Victory points', 'hud.cards': 'Resource cards', 'hud.devCards': 'Fortune cards',
-  'hud.guards': 'Guards played', 'hud.longest': 'Longest road',
-  'hud.longestRoad': 'Longest Road', 'hud.strongestGuard': 'Strongest Guard',
+  'hud.guards': 'Knights played', 'hud.longest': 'Longest road',
+  'hud.longestRoad': 'Longest Road', 'hud.strongestGuard': 'Largest Army',
   'st.rollingMe': 'Rolling…', 'st.rolling': '{name} is rolling…', 'st.wins': '🏆 {name} wins!',
   'st.placeSettlement': 'Place a settlement (glowing spots)', 'st.placeRoad': 'Place a road (glowing spots)',
   'st.placingSettlement': '{name} is placing a settlement…', 'st.placingRoad': '{name} is placing a road…',
@@ -136,27 +139,30 @@ const en: Dict = {
   'm.trade': 'Trade', 'm.tabBank': 'Bank & harbours', 'm.tabPlayers': 'Players',
   'm.give': 'You give', 'm.get': 'You get', 'm.want': 'You want',
   'm.doBank': 'Trade with bank', 'm.offer': 'Offer to everyone',
-  'help.body': `<p><b>Goal:</b> first to <b>{n} points</b> on their turn wins. Settlement = 1, City = 2, Longest Road (5+) = 2, Strongest Guard (3+ guards) = 2, Monument = 1.</p>
+  'help.body': `<p><b>Goal:</b> first to <b>{n} points</b> on their turn wins. Settlement = 1, City = 2, Longest Road (5+) = 2, Largest Army (3+ knights) = 2, Monument = 1.</p>
 <p><b>Setup:</b> each player places a settlement + road, then again in reverse order. The second settlement collects the resources around it.</p>
 <p><b>Turn:</b> roll the dice – every tile with that number produces for settlements (1) and cities (2) on its corners. Then build, buy fortune cards, and trade.</p>
 <p><b>Rolling 7:</b> anyone with more than 7 cards discards half. The roller moves the Raider (blocks a tile) and steals a card from a neighbour of it.</p>
 <p><b>Building:</b> settlements need 2 spaces between them and must touch your road (except in setup). Roads must connect to your network.</p>
 <p><b>Trading:</b> 4:1 with the bank, 3:1 or 2:1 if you have a settlement on a harbour. Offer trades to other players any time during your turn.</p>
-<p><b>Fortune cards:</b> one per turn, not on the turn you bought it. Guards may be played before rolling.</p>
+<p><b>Fortune cards:</b> one per turn, not on the turn you bought it. Knights may be played before rolling.</p>
 <p><b>Camera:</b> drag to rotate, scroll/pinch to zoom.</p>`,
 };
 
 const ar: Dict = {
+  'chat.title': 'الدردشة', 'chat.placeholder': 'اكتب شيئًا…', 'chat.send': 'إرسال',
+  'chat.empty': 'لا توجد رسائل بعد. قل مرحبًا! 👋', 'hud.chat': 'الدردشة',
+  'side.hide': 'إخفاء اللوحات', 'side.show': 'إظهار اللاعبين والجوائز',
 
-  'award.road': 'أطول طريق', 'award.guard': 'أقوى حراسة', 'award.pts': '+2 نقطتان',
-  'award.unclaimed': 'غير محجوزة', 'award.needRoad': 'أول طريق بطول 5 أو أكثر يفوز بها', 'award.needGuard': 'أول من يلعب 3 حرّاس يفوز بها',
-  'award.roadLen': 'طريق بطول {n}', 'award.guardSize': '{n} حرّاس',
+  'award.road': 'أطول طريق', 'award.guard': 'أكبر جيش', 'award.pts': '+2 نقطتان',
+  'award.unclaimed': 'غير محجوزة', 'award.needRoad': 'أول طريق بطول 5 أو أكثر يفوز بها', 'award.needGuard': 'أول من يلعب 3 فرسان يفوز به',
+  'award.roadLen': 'طريق بطول {n}', 'award.guardSize': '{n} فرسان',
   'banner.yourTurn': 'دورك!', 'banner.turnOf': 'دور {name}',
   'banner.award': '{name} يحصل على «{award}»!', 'banner.awardLost': '«{award}» متاحة من جديد!',
   'banner.play': '{name} يلعب «{card}»!', 'banner.buy': '{name} يشتري بطاقة حظ',
   'res.timber': 'خشب', 'res.clay': 'طين', 'res.wool': 'صوف', 'res.grain': 'قمح', 'res.ore': 'خام',
-  'dev.guard': 'حارس', 'dev.roadworks': 'أشغال الطرق', 'dev.harvest': 'الحصاد', 'dev.embargo': 'الحظر', 'dev.monument': 'نُصب تذكاري',
-  'devText.guard': 'حرّك الغازي واسرق بطاقة واحدة. يُحتسب ضمن «أقوى حراسة».',
+  'dev.guard': 'فارس', 'dev.roadworks': 'أشغال الطرق', 'dev.harvest': 'الحصاد', 'dev.embargo': 'الحظر', 'dev.monument': 'نُصب تذكاري',
+  'devText.guard': 'حرّك الغازي واسرق بطاقة واحدة. يُحتسب ضمن «أكبر جيش».',
   'devText.roadworks': 'ابنِ طريقين مجانًا.',
   'devText.harvest': 'خذ أي موردين من البنك.',
   'devText.embargo': 'اختر موردًا، وسيعطيك كل خصم كل ما لديه منه.',
@@ -205,8 +211,8 @@ const ar: Dict = {
   'log.harvest': '🧺 {name} يلعب «الحصاد»: {cards}',
   'log.embargo': '⚖️ {name} يفرض «الحظر» على {res} ويجمع {n}.',
   'log.roadworks': '🛤️ {name} يلعب «أشغال الطرق».',
-  'log.guard': '🛡️ {name} يرسل حارسًا.',
-  'log.strongestGuard': '⚔️ {name} يملك الآن «أقوى حراسة».',
+  'log.guard': '🛡️ {name} يرسل فارسًا.',
+  'log.strongestGuard': '⚔️ {name} يملك الآن «أكبر جيش».',
   'log.bankTrade': '{name} يبادل {n} {give} مع البنك مقابل 1 {get}',
   'log.offers': '{name} يعرض {give} مقابل {get}',
   'log.turn': '— دور {name} —',
@@ -239,8 +245,8 @@ const ar: Dict = {
   'hud.rules': 'القواعد', 'hud.logTitle': 'سجل اللعبة', 'hud.log': 'السجل', 'hud.switchLang': 'English',
   'hud.you': '(أنت)', 'hud.offline': 'غير متصل',
   'hud.vp': 'نقاط الفوز', 'hud.cards': 'بطاقات الموارد', 'hud.devCards': 'بطاقات الحظ',
-  'hud.guards': 'الحرّاس الذين لُعبوا', 'hud.longest': 'أطول طريق',
-  'hud.longestRoad': 'أطول طريق', 'hud.strongestGuard': 'أقوى حراسة',
+  'hud.guards': 'الفرسان الذين لُعبوا', 'hud.longest': 'أطول طريق',
+  'hud.longestRoad': 'أطول طريق', 'hud.strongestGuard': 'أكبر جيش',
   'st.rollingMe': 'جارٍ رمي النرد…', 'st.rolling': '{name} يرمي النرد…', 'st.wins': '🏆 فاز {name}!',
   'st.placeSettlement': 'ضع مستوطنة (الأماكن المضيئة)', 'st.placeRoad': 'ضع طريقًا (الأماكن المضيئة)',
   'st.placingSettlement': '{name} يضع مستوطنة…', 'st.placingRoad': '{name} يضع طريقًا…',
@@ -271,13 +277,13 @@ const ar: Dict = {
   'm.trade': 'تبادل', 'm.tabBank': 'البنك والموانئ', 'm.tabPlayers': 'اللاعبون',
   'm.give': 'تعطي', 'm.get': 'تحصل على', 'm.want': 'تريد',
   'm.doBank': 'بادل مع البنك', 'm.offer': 'اعرض على الجميع',
-  'help.body': `<p><b>الهدف:</b> أول من يصل إلى <b>{n} نقاط</b> في دوره يفوز. المستوطنة = 1، المدينة = 2، أطول طريق (5 فأكثر) = 2، أقوى حراسة (3 حرّاس فأكثر) = 2، النُّصب التذكاري = 1.</p>
+  'help.body': `<p><b>الهدف:</b> أول من يصل إلى <b>{n} نقاط</b> في دوره يفوز. المستوطنة = 1، المدينة = 2، أطول طريق (5 فأكثر) = 2، أكبر جيش (3 فرسان فأكثر) = 2، النُّصب التذكاري = 1.</p>
 <p><b>الإعداد:</b> يضع كل لاعب مستوطنة وطريقًا، ثم مرة أخرى بالترتيب المعاكس. المستوطنة الثانية تجمع الموارد المحيطة بها.</p>
 <p><b>الدور:</b> ارمِ النرد – كل أرض تحمل الرقم الناتج تُنتج للمستوطنات (1) والمدن (2) الواقعة على زواياها. ثم ابنِ، واشترِ بطاقات الحظ، وتاجر.</p>
 <p><b>رمية 7:</b> كل من لديه أكثر من 7 بطاقات يتخلّص من نصفها. يحرّك الرامي الغازي (فيعطّل أرضًا) ويسرق بطاقة من أحد اللاعبين المجاورين لها.</p>
 <p><b>البناء:</b> يجب أن تفصل بين المستوطنات مسافة طريقين على الأقل، وأن تلامس طريقك (إلا في الإعداد). ويجب أن تتصل الطرق بشبكتك.</p>
 <p><b>التبادل:</b> 4:1 مع البنك، أو 3:1 أو 2:1 إذا كانت لديك مستوطنة على ميناء. ويمكنك عرض صفقات على اللاعبين الآخرين في أي وقت خلال دورك.</p>
-<p><b>بطاقات الحظ:</b> بطاقة واحدة في كل دور، ولا تُلعب في الدور الذي اشتريتها فيه. يمكن لعب الحارس قبل رمي النرد.</p>
+<p><b>بطاقات الحظ:</b> بطاقة واحدة في كل دور، ولا تُلعب في الدور الذي اشتريتها فيه. يمكن لعب الفارس قبل رمي النرد.</p>
 <p><b>الكاميرا:</b> اسحب للتدوير، ومرّر أو اقرص للتكبير والتصغير.</p>`,
 };
 

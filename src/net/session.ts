@@ -9,7 +9,7 @@ export interface LobbyInfo {
   started: boolean;
 }
 
-type ClientMsg = { t: 'join'; name: string; clientId: string } | { t: 'action'; action: Action };
+type ClientMsg = { t: 'join'; name: string; clientId: string } | { t: 'action'; action: Action } | { t: 'chat'; text: string };
 type HostMsg =
   | { t: 'welcome'; seat: number }
   | { t: 'reject'; msg: string }
@@ -30,6 +30,7 @@ export interface Session {
   readonly code: string;
   seat: number;
   act(a: Action): void;
+  chat(text: string): void;
   start?(): void;
 }
 
@@ -99,6 +100,13 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
       ev.onState(state);
     }
   };
+  const chat = (seat: number, raw: unknown) => {
+    const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!state || !text) return;
+    const list = state.chat ?? [];
+    state.chat = [...list, { id: (list[list.length - 1]?.id ?? 0) + 1, p: seat, text }].slice(-80);
+    publish();
+  };
   const handle = (seat: number, a: Action, reply: (m: HostMsg) => void) => {
     if (!state) return reply({ t: 'error', msg: M('net.notStarted') });
     const r = applyAction(state, seat, a);
@@ -130,6 +138,8 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
         publish();
       } else if (m.t === 'action' && seat >= 0) {
         handle(seat, m.action, (r) => link.send(r));
+      } else if (m.t === 'chat' && seat >= 0) {
+        chat(seat, m.text);
       }
     });
     link.onClose(() => {
@@ -145,6 +155,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     code,
     seat: 0,
     act: (a) => handle(0, a, (m) => m.t === 'error' && ev.onError(m.msg)),
+    chat: (text) => chat(0, text),
     start: () => {
       if (state) return;
       if (seats.length < 2) return ev.onError(M('net.need2'));
@@ -168,6 +179,7 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
       code: code.toUpperCase(),
       seat: -1,
       act: (a) => link.send({ t: 'action', action: a } satisfies ClientMsg),
+      chat: (text) => link.send({ t: 'chat', text } satisfies ClientMsg),
     };
     link.onMessage((m: HostMsg) => {
       switch (m.t) {

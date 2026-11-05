@@ -3,6 +3,7 @@ import { GameState } from './game/types';
 import { LobbyInfo, Session, SessionEvents, clearSavedHost, hostGame, joinGame, loadSavedHost } from './net/session';
 import { BoardView } from './render/scene';
 import { Hud } from './ui/hud';
+import { Chat } from './ui/chat';
 import { M } from './game/msg';
 import { WIN_POINTS } from './game/types';
 import { applyDir, getLang, onLangChange, setLang, t, tr } from './i18n';
@@ -139,7 +140,12 @@ function onState(s: GameState) {
     board.onDiceLanded = () => hud!.diceLanded();
     hud.hexScreenPos = (h) => board!.hexScreenPos(h);
     hud.onChange = () => board!.update(s0!, hud!.selectable());
+    const chat = new Chat(app, session.seat, (text) => session!.chat(text),
+      (p) => document.querySelector(`.player[data-p="${p}"]`)?.getBoundingClientRect() ?? null);
+    chat.onUnreadChange = () => hud!.render();
+    hud.chat = chat;
   }
+  hud.chat?.update(s);
   s0 = s;
   hud.setState(s);
   board!.update(s, hud.selectable());
@@ -169,6 +175,9 @@ applyDir();
 onLangChange(() => {
   if (screen === 'home') renderHome(homeError);
   else if (screen === 'waiting' && lastLobby) renderWaiting(lastLobby);
-  else if (screen === 'game') hud?.render();
+  else if (screen === 'game') {
+    hud?.chat?.relabel();
+    hud?.render();
+  }
 });
 renderHome();

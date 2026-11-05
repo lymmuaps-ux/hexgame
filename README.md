@@ -51,5 +51,6 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
+| `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |
 | `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |

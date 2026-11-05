@@ -14,7 +14,7 @@ export const RES_INFO: Record<Resource, { label: string; icon: string; color: st
 export type DevCard = 'guard' | 'roadworks' | 'harvest' | 'embargo' | 'monument';
 
 export const DEV_INFO: Record<DevCard, { label: string; icon: string; text: string }> = {
-  guard: { label: 'Guard', icon: '🛡️', text: 'Move the Raider and steal 1 card. Counts toward Strongest Guard.' },
+  guard: { label: 'Knight', icon: '🛡️', text: 'Move the Raider and steal 1 card. Counts toward Largest Army.' },
   roadworks: { label: 'Roadworks', icon: '🛤️', text: 'Build 2 roads for free.' },
   harvest: { label: 'Harvest', icon: '🧺', text: 'Take any 2 resources from the bank.' },
   embargo: { label: 'Embargo', icon: '⚖️', text: 'Name a resource. Every opponent gives you all of theirs.' },
@@ -117,6 +117,8 @@ export interface GameState {
   /** the latest batch of resources handed out (by a roll or a setup settlement), for animation */
   production?: { id: number; items: ProductionItem[] };
   fx?: { id: number; list: FxEvent[] };
+  /** in-game chat (added by the host outside the rules) */
+  chat?: { id: number; p: number; text: string }[];
   hexes: Hex[];
   ports: Port[];
   raider: number;
