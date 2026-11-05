@@ -21,6 +21,11 @@ const resChip = (r: Resource, n?: number) =>
 const costHtml = (c: Partial<ResMap>) =>
   RESOURCES.filter((r) => c[r]).map((r) => `<span class="cost">${RES_INFO[r].icon}${(c[r] ?? 0) > 1 ? '×' + c[r] : ''}</span>`).join('');
 const fmt = (m: Partial<ResMap>) => RESOURCES.filter((r) => (m[r] ?? 0) > 0).map((r) => resChip(r, m[r])).join('');
+const NO_SPOT = {
+  settlement: 'No legal spot yet: a settlement must be on one of your roads AND at least 2 road lengths from every other settlement or city. Build another road outward first.',
+  road: 'There is no free edge connected to your roads or buildings.',
+  city: 'Cities upgrade one of your settlements – you have none left to upgrade.',
+};
 const DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
 export class Hud {
@@ -185,12 +190,18 @@ export class Hud {
   }
 
   toast(msg: string) {
-    const t = this.root.querySelector<HTMLElement>('#toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.classList.add('show');
+    // lives outside the re-rendered HUD so a redraw can't wipe it
+    let t = document.getElementById('toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'toast';
+      (this.root.parentElement ?? document.body).appendChild(t);
+    }
+    const el = t;
+    el.textContent = msg;
+    el.classList.add('show');
     clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => t.classList.remove('show'), 2800);
+    this.toastTimer = window.setTimeout(() => el.classList.remove('show'), Math.max(2800, msg.length * 55));
   }
 
   /** what the 3D board should let me click */
@@ -232,6 +243,7 @@ export class Hud {
       case 'roll': this.act({ type: 'roll' }); break;
       case 'end': this.act({ type: 'endTurn' }); break;
       case 'mode': this.mode = this.mode === v ? null : (v as Mode); break;
+      case 'noSpot': this.toast(NO_SPOT[v as keyof typeof NO_SPOT]); break;
       case 'buyDev': this.act({ type: 'buyDev' }); break;
       case 'playDev': {
         const card = v as DevCard;
@@ -368,6 +380,12 @@ export class Hud {
 
     const bld = (what: 'road' | 'settlement' | 'city', label: string, icon: string, left: number) => {
       const ok = actions && canAfford(s, this.seat, what) && left > 0;
+      // affordable, but is there anywhere legal to put it?
+      const spots = !ok ? 1 : (what === 'road' ? validRoadSpots : what === 'settlement' ? validSettlementSpots : validCitySpots)(s, this.seat).length;
+      if (ok && spots === 0) {
+        return `<button class="build blocked" data-a="noSpot" data-v="${what}" title="${esc(NO_SPOT[what])}">
+          <span>${icon} ${label}</span><span class="costs">${costHtml(COSTS[what])}</span><small>no spot yet ⓘ</small></button>`;
+      }
       return `<button class="build ${this.mode === what ? 'on' : ''}" data-a="mode" data-v="${what}" ${ok ? '' : 'disabled'}>
         <span>${icon} ${label}</span><span class="costs">${costHtml(COSTS[what])}</span><small>${left} left</small></button>`;
     };
@@ -415,7 +433,7 @@ export class Hud {
         <div class="controls">${controls}</div>
       </div>
       ${this.modalHtml(s)}
-      <div id="toast"></div>`;
+`;
     const lines = this.root.querySelector('#log .lines');
     if (lines) lines.scrollTop = lines.scrollHeight;
   }

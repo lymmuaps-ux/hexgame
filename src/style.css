@@ -224,3 +224,8 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
   text-shadow: 0 2px 6px rgba(0,0,0,.6); animation: plusone 0.9s ease-out forwards; white-space: nowrap;
 }
 @keyframes plusone { from { opacity: 1; transform: translate(-50%, -60%); } to { opacity: 0; transform: translate(-50%, -190%); } }
+
+.build.blocked { opacity: 0.8; border-style: dashed; }
+.build.blocked small { color: #b3261e; opacity: 1; font-weight: 600; }
+#toast { max-width: min(90%, 460px); text-align: center; line-height: 1.35; }
+#toast { z-index: 8; }
