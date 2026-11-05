@@ -1,5 +1,5 @@
 import { GameState } from '../game/types';
-import { getLang, t } from '../i18n';
+import { t } from '../i18n';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const REACTIONS = ['👍', '😂', '😮', '😡', '🎉', '👏'];
@@ -62,6 +62,7 @@ export class Chat {
     this.open = force ?? !this.open;
     this.el.classList.toggle('open', this.open);
     if (this.open) {
+      this.clearNotes();
       this.unread = 0;
       this.onUnreadChange();
       this.list.scrollTop = this.list.scrollHeight;
@@ -93,7 +94,7 @@ export class Chat {
         if (!this.open) {
           this.unread++;
           this.onUnreadChange();
-          if (!isEmojiOnly(m.text)) this.bubble(m.p, m.text, p?.color ?? '#999');
+          this.notify(p?.name ?? '?', m.text, p?.color ?? '#999');
         }
       }
     }
@@ -101,22 +102,47 @@ export class Chat {
     this.list.scrollTop = this.list.scrollHeight;
   }
 
-  /** speech bubble next to the sender's panel */
-  private bubble(p: number, text: string, color: string) {
-    const r = this.panelRect(p);
-    if (!r) return;
-    const rtl = getLang() === 'ar';
-    const b = document.createElement('div');
-    b.className = `bubble${rtl ? ' rtl' : ''}`;
-    b.style.setProperty('--pc', color);
-    b.textContent = text.length > 80 ? text.slice(0, 78) + '…' : text;
-    b.dir = 'auto';
-    b.style.top = `${r.top + r.height / 2}px`;
-    if (rtl) b.style.right = `${innerWidth - r.left + 10}px`;
-    else b.style.left = `${r.right + 10}px`;
-    b.addEventListener('click', () => this.toggle(true));
-    this.layer.appendChild(b);
-    setTimeout(() => b.remove(), 6000);
+  /** small card in the corner showing who wrote what; tap to open the chat */
+  private notify(name: string, text: string, color: string) {
+    let stack = this.layer.querySelector<HTMLElement>('.chat-notes');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'chat-notes';
+      this.layer.appendChild(stack);
+    }
+    const n = document.createElement('div');
+    n.className = 'chat-note';
+    n.style.setProperty('--pc', color);
+    n.innerHTML = `<span class="who"><span class="dot"></span>${esc(name)}</span><span class="txt" dir="auto"></span><i class="bar"></i>`;
+    n.querySelector('.txt')!.textContent = text;
+    if (isEmojiOnly(text)) n.classList.add('emoji');
+    let gone = false;
+    const close = () => {
+      if (gone) return;
+      gone = true;
+      n.classList.add('out');
+      setTimeout(() => n.remove(), 300);
+    };
+    n.addEventListener('click', () => {
+      close();
+      this.toggle(true);
+    });
+    stack.appendChild(n);
+    // keep at most 3 on screen
+    const notes = [...stack.querySelectorAll('.chat-note:not(.out)')];
+    notes.slice(0, Math.max(0, notes.length - 3)).forEach((o) => {
+      o.classList.add('out');
+      setTimeout(() => o.remove(), 300);
+    });
+    setTimeout(close, 5000);
+  }
+
+  /** close every notification (when the chat opens) */
+  private clearNotes() {
+    this.layer.querySelectorAll('.chat-note').forEach((n) => {
+      n.classList.add('out');
+      setTimeout(() => n.remove(), 300);
+    });
   }
 
   /** reactions float up from the sender's panel */

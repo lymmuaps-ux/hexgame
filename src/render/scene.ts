@@ -574,9 +574,15 @@ export class BoardView {
       const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 16), mat(0xffffff, 0.95));
       arrow.rotation.x = Math.PI; // point down at the spot
       arrow.position.y = 0.62;
-      core.add(beam, ring, arrow);
       core.userData.ring = ring;
-      core.userData.arrow = arrow;
+      // many spots (e.g. during setup): plain glowing dots, few spots: tall pins that are easy to find
+      if (sel.ids.length > 12) {
+        core.scale.setScalar(0.8);
+        core.add(ring);
+      } else {
+        core.add(beam, ring, arrow);
+        core.userData.arrow = arrow;
+      }
       return core;
     };
     for (const id of sel.ids) {
