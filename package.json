@@ -10,6 +10,7 @@
     "test": "tsx scripts/simulate.ts"
   },
   "dependencies": {
+    "mqtt": "^5.10.1",
     "peerjs": "1.5.4",
     "three": "0.170.0"
   },

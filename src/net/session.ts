@@ -13,7 +13,7 @@ type HostMsg =
   | { t: 'welcome'; seat: number }
   | { t: 'reject'; msg: string }
   | { t: 'lobby'; lobby: LobbyInfo }
-  | { t: 'state'; state: GameState }
+  | { t: 'state'; state: GameState; v: number }
   | { t: 'error'; msg: string };
 
 export interface SessionEvents {
@@ -85,6 +85,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
       localStorage.setItem(SAVE_KEY, JSON.stringify({ code, seats: seats.map(({ name, clientId }) => ({ name, clientId })), state }));
     } catch { /* storage unavailable */ }
   };
+  let version = 0;
   const broadcast = (m: HostMsg) => seats.forEach((s) => s.link?.send(m));
   const publish = () => {
     if (state) state.players.forEach((p, i) => (p.connected = i === 0 || !!seats[i]?.link));
@@ -93,7 +94,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     broadcast({ t: 'lobby', lobby: l });
     ev.onLobby(l);
     if (state) {
-      broadcast({ t: 'state', state });
+      broadcast({ t: 'state', state, v: ++version });
       ev.onState(state);
     }
   };
@@ -159,6 +160,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
 
 export async function joinGame(code: string, name: string, ev: SessionEvents): Promise<Session> {
   const link = await getTransport().join(code.toUpperCase());
+  let lastVersion = 0;
   return new Promise((resolve, reject) => {
     const session: Session = {
       isHost: false,
@@ -171,7 +173,13 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
         case 'welcome': session.seat = m.seat; resolve(session); break;
         case 'reject': reject(new Error(m.msg)); break;
         case 'lobby': ev.onLobby(m.lobby); break;
-        case 'state': ev.onState(m.state); break;
+        case 'state':
+          // relays can deliver out of order: never go back to an older state
+          if (m.v > lastVersion || m.v < lastVersion - 1000) {
+            lastVersion = m.v;
+            ev.onState(m.state);
+          }
+          break;
         case 'error': ev.onError(m.msg); break;
       }
     });

@@ -1,4 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
+import { relayTransport } from './relay';
 
 /** A bidirectional message pipe between the host and one client. */
 export interface Link {
@@ -162,5 +163,9 @@ export const tabTransport: Transport = {
   },
 };
 
-export const getTransport = (): Transport =>
-  new URLSearchParams(location.search).has('tabs') ? tabTransport : peerTransport;
+export const getTransport = (): Transport => {
+  const q = new URLSearchParams(location.search);
+  if (q.has('tabs')) return tabTransport;
+  if (q.has('p2p')) return peerTransport;
+  return relayTransport;
+};

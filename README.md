@@ -6,10 +6,14 @@ It runs entirely in the browser, so you don't need a backend.
 ## How multiplayer works without a server
 - The player who clicks **Create game** is the *host*. Their browser runs the rules and holds the game state.
 - Friends enter their name and the 5-letter room code (or open the shared link), then **Join**.
-- Browsers connect directly (peer-to-peer WebRTC via [PeerJS](https://peerjs.com)). PeerJS's free public
-  broker is used only to introduce the peers; game traffic goes browser-to-browser.
-- The host must keep their tab open. If the host reloads, they can click **Resume game** to continue.
-  Players who reload can rejoin with the same name and code.
+- Messages travel through free public MQTT relay servers over secure WebSockets (ordinary web traffic,
+  so firewalls and mobile networks don't block it). The game connects to several relays at once
+  (EMQX, HiveMQ, Mosquitto) and drops duplicates, so it keeps working if one relay is down.
+- The host must keep their tab open. If the host reloads, they can click **Resume game** and everyone re-joins
+  with the same name and code.
+- The relays are public: anyone who guesses a room code could read that room's messages. Fine for casual games.
+- URL options: `?p2p` uses direct peer-to-peer (WebRTC) instead, `?tabs` plays across tabs of one browser
+  with no network, and `?broker=wss://your-server/mqtt` (repeatable) uses your own MQTT servers.
 
 ## Run locally
 ```bash
@@ -37,7 +41,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/game/types.ts` | state, actions, costs |
 | `src/game/board.ts` | hex/vertex/edge geometry, random board generation |
 | `src/game/rules.ts` | the rules engine (pure reducer, runs on the host) |
-| `src/net/` | PeerJS / BroadcastChannel transports, host & client sessions |
+| `src/net/` | MQTT relay (default), PeerJS and BroadcastChannel transports; host & client sessions |
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |
