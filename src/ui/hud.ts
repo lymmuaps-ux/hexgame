@@ -328,7 +328,10 @@ export class Hud {
       case 'roadworks': return mine ? `Place ${s.roadworksLeft} free road(s)` : `${who} is building roads…`;
       default:
         if (!mine) return `${who}'s turn`;
-        if (this.mode) return `Click a glowing spot to build a ${this.mode} – or click the button again to cancel`;
+        if (this.mode) {
+          const n = this.selectable()?.ids.length ?? 0;
+          return `Click a glowing spot to build a ${this.mode} (${n} available) – or click the button again to cancel`;
+        }
         return 'Build, trade, or end your turn';
     }
   }

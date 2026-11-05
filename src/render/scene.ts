@@ -347,11 +347,20 @@ export class BoardView {
     this.controls.update();
     this.dice.tick(dt);
     this.animateCelebration(dt);
-    const pulse = 0.55 + 0.35 * Math.sin(t / 220);
+    const wave = (Math.sin(t / 220) + 1) / 2;
+    const ripple = (t / 1100) % 1;
     for (const h of this.highlights.children) {
+      const hov = h === this.hovered;
       const m = (h as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      m.opacity = h === this.hovered ? 0.95 : pulse;
-      if (h === this.hovered) h.scale.setScalar(1.25);
+      m.opacity = hov ? 1 : (h.userData.kind === 'hex' ? 0.3 + 0.35 * wave : 0.7 + 0.25 * wave);
+      h.scale.setScalar(hov ? 1.3 : 1);
+      const arrow = h.userData.arrow as THREE.Mesh | undefined;
+      if (arrow) arrow.position.y = 0.62 + 0.12 * wave;
+      const ring = h.userData.ring as THREE.Mesh | undefined;
+      if (ring) {
+        ring.scale.setScalar(1 + ripple * 1.8);
+        (ring.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - ripple);
+      }
     }
     this.raider.position.lerp(this.raiderTarget, 0.12);
     this.raider.position.y = this.raiderTarget.y + Math.max(0, 0.6 * this.raider.position.distanceTo(this.raiderTarget));
@@ -519,28 +528,43 @@ export class BoardView {
     this.highlights.clear();
     this.hovered = null;
     if (!sel) return;
-    const mat = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false });
+    // bright cyan markers drawn on top of everything so they can't hide behind trees or blend into tiles
+    const CYAN = 0x22e6ff;
+    const mat = (color: number, opacity = 0.85, onTop = true) =>
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: !onTop });
+    const pin = (x: number, z: number, y: number) => {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 14), mat(0x00d8ff, 0.95));
+      core.position.set(x, y, z);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.9, 8), mat(CYAN, 0.45));
+      beam.position.y = 0.45;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 8, 32), mat(CYAN, 0.9));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.24 - y;
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 16), mat(0xffffff, 0.95));
+      arrow.rotation.x = Math.PI; // point down at the spot
+      arrow.position.y = 0.62;
+      core.add(beam, ring, arrow);
+      core.userData.ring = ring;
+      core.userData.arrow = arrow;
+      return core;
+    };
     for (const id of sel.ids) {
       let m: THREE.Mesh;
       if (sel.kind === 'vertex') {
         const v = GEO.vertices[id];
-        m = sel.style === 'city'
-          ? new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 24), mat())
-          : new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), mat());
-        if (sel.style === 'city') m.rotation.x = Math.PI / 2;
-        m.position.set(v.x, 0.32, v.z);
+        m = pin(v.x, v.z, sel.style === 'city' ? 0.66 : 0.38);
       } else if (sel.kind === 'edge') {
         const e = GEO.edges[id];
-        m = new THREE.Mesh(new THREE.BoxGeometry(HEX_SIZE * 0.55, 0.08, 0.13), mat());
-        m.position.set(e.x, 0.26, e.z);
+        m = new THREE.Mesh(new THREE.BoxGeometry(HEX_SIZE * 0.6, 0.1, 0.16), mat(CYAN, 0.9));
+        m.position.set(e.x, 0.28, e.z);
         m.rotation.y = -e.angle;
       } else {
         const c = GEO.hexCoords[id];
-        m = new THREE.Mesh(new THREE.CylinderGeometry(HEX_SIZE * 0.82, HEX_SIZE * 0.82, 0.03, 6), mat());
-        (m.material as THREE.MeshBasicMaterial).color.set(0xff5577);
+        m = new THREE.Mesh(new THREE.CylinderGeometry(HEX_SIZE * 0.82, HEX_SIZE * 0.82, 0.03, 6), mat(0xff5577, 0.6, false));
         m.position.set(c.x, 0.27, c.z);
       }
-      m.userData = { kind: sel.kind, id };
+      m.traverse((o) => (o.renderOrder = 10));
+      m.userData = { ...m.userData, kind: sel.kind, id };
       this.highlights.add(m);
     }
   }
