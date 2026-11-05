@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GEO, HEX_SIZE } from '../game/board';
 import { Dice } from './dice';
+import { Clouds, Ocean, Particles } from './effects';
 import { GameState, RES_INFO, TileType } from '../game/types';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
@@ -238,7 +239,11 @@ export class BoardView {
   private raider = raiderMesh();
   private raiderTarget = new THREE.Vector3();
   private pieceKeys = new Set<string>();
-  private popping: { obj: THREE.Object3D; t: number }[] = [];
+  private popping: { obj: THREE.Object3D; t: number; road?: boolean }[] = [];
+  private ocean = new Ocean();
+  private clouds = new Clouds();
+  private particles = new Particles();
+  private raiderLanding = false;
   private ray = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private hovered: THREE.Object3D | null = null;
@@ -281,14 +286,8 @@ export class BoardView {
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
-    this.water = new THREE.Mesh(
-      new THREE.CircleGeometry(60, 64),
-      new THREE.MeshStandardMaterial({ color: 0x1f78b4, roughness: 0.3, metalness: 0.1 }),
-    );
-    this.water.rotation.x = -Math.PI / 2;
-    this.water.position.y = -0.12;
-    this.water.receiveShadow = true;
-    this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider, this.dice.group);
+    this.water = this.ocean.mesh;
+    this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider, this.dice.group, this.clouds.group, this.particles.group);
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.onMove(e));
@@ -372,11 +371,26 @@ export class BoardView {
       this.raider.rotation.y = k * Math.PI * 4;
     }
     this.popping = this.popping.filter((p) => {
-      p.t = Math.min(1, p.t + 0.06);
-      const k = 1 + 0.4 * Math.sin(p.t * Math.PI) * (1 - p.t);
-      p.obj.scale.setScalar(p.t * k);
+      p.t = Math.min(1, p.t + dt * 3.2);
+      if (p.road) {
+        // roads grow along their edge
+        const e = 1 - Math.pow(1 - p.t, 3);
+        p.obj.scale.set(Math.max(0.01, e), 1, 1);
+      } else {
+        // buildings drop in and squash a little on landing
+        const k = 1 + 0.4 * Math.sin(p.t * Math.PI) * (1 - p.t);
+        p.obj.scale.setScalar(Math.max(0.01, p.t * k));
+        p.obj.position.y = 0.2 + (1 - p.t) * (1 - p.t) * 1.2;
+      }
       return p.t < 1;
     });
+    this.ocean.tick(t);
+    this.clouds.tick(dt);
+    this.particles.tick(dt);
+    if (this.raiderLanding && this.raider.position.distanceTo(this.raiderTarget) < 0.06) {
+      this.raiderLanding = false;
+      this.particles.smoke(this.raiderTarget.x, this.raiderTarget.z);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -473,6 +487,7 @@ export class BoardView {
       const color = s.players[b.owner].color;
       want.set(`b${v}${b.kind}${b.owner}`, () => {
         const m = b.kind === 'city' ? cityMesh(color) : settlementMesh(color);
+        m.userData.color = color;
         m.position.set(vx.x, 0.2, vx.z);
         m.rotation.y = Number(v) * 1.3;
         return m;
@@ -482,6 +497,7 @@ export class BoardView {
       const ed = GEO.edges[Number(e)];
       want.set(`r${e}${owner}`, () => {
         const m = roadMesh(s.players[owner].color);
+        m.userData.color = s.players[owner].color;
         m.position.set(ed.x, 0.2, ed.z);
         m.rotation.y = -ed.angle;
         return m;
@@ -501,8 +517,15 @@ export class BoardView {
       this.pieces.add(o);
       this.pieceKeys.add(k);
       if (fresh) {
-        o.scale.setScalar(0.01);
-        this.popping.push({ obj: o, t: 0 });
+        const road = k.startsWith('r');
+        if (road) o.scale.set(0.01, 1, 1);
+        else o.scale.setScalar(0.01);
+        this.popping.push({ obj: o, t: 0, road });
+        const color = o.userData.color as string;
+        // burst when the piece lands (roads: right away, buildings: after the drop)
+        const fire = () => this.particles.burst(o.position.x, o.position.z, color, road ? 8 : 18);
+        if (road) fire();
+        else setTimeout(fire, 280);
       }
     }
 
@@ -524,7 +547,13 @@ export class BoardView {
     }
 
     const rc = GEO.hexCoords[s.raider];
+    if (Math.abs(this.raiderTarget.x - (rc.x + 0.4)) > 0.01 || Math.abs(this.raiderTarget.z - (rc.z - 0.25)) > 0.01) {
+      if (this.raiderTarget.lengthSq() > 0) this.raiderLanding = true;
+    }
     this.raiderTarget.set(rc.x + 0.4, 0.2, rc.z - 0.25);
+    // victory lap: the camera slowly circles the island
+    this.controls.autoRotate = s.phase === 'ended';
+    this.controls.autoRotateSpeed = 0.8;
 
     // highlights
     this.highlights.clear();

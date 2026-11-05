@@ -5,6 +5,14 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+
+  // awards & banners
+  'award.road': 'Longest Road', 'award.guard': 'Strongest Guard', 'award.pts': '+2 points',
+  'award.unclaimed': 'Unclaimed', 'award.needRoad': 'First road of 5+ takes it', 'award.needGuard': 'First to 3 guards takes it',
+  'award.roadLen': 'road of {n}', 'award.guardSize': '{n} guards',
+  'banner.yourTurn': 'Your turn!', 'banner.turnOf': "{name}'s turn",
+  'banner.award': '{name} takes the {award}!', 'banner.awardLost': '{award} is up for grabs again!',
+  'banner.play': '{name} plays {card}!', 'banner.buy': '{name} buys a fortune card',
   // resources, cards, pieces
   'res.timber': 'Timber', 'res.clay': 'Clay', 'res.wool': 'Wool', 'res.grain': 'Grain', 'res.ore': 'Ore',
   'dev.guard': 'Guard', 'dev.roadworks': 'Roadworks', 'dev.harvest': 'Harvest', 'dev.embargo': 'Embargo', 'dev.monument': 'Monument',
@@ -139,6 +147,13 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+
+  'award.road': 'أطول طريق', 'award.guard': 'أقوى حراسة', 'award.pts': '+2 نقطتان',
+  'award.unclaimed': 'غير محجوزة', 'award.needRoad': 'أول طريق بطول 5 أو أكثر يفوز بها', 'award.needGuard': 'أول من يلعب 3 حرّاس يفوز بها',
+  'award.roadLen': 'طريق بطول {n}', 'award.guardSize': '{n} حرّاس',
+  'banner.yourTurn': 'دورك!', 'banner.turnOf': 'دور {name}',
+  'banner.award': '{name} يحصل على «{award}»!', 'banner.awardLost': '«{award}» متاحة من جديد!',
+  'banner.play': '{name} يلعب «{card}»!', 'banner.buy': '{name} يشتري بطاقة حظ',
   'res.timber': 'خشب', 'res.clay': 'طين', 'res.wool': 'صوف', 'res.grain': 'قمح', 'res.ore': 'خام',
   'dev.guard': 'حارس', 'dev.roadworks': 'أشغال الطرق', 'dev.harvest': 'الحصاد', 'dev.embargo': 'الحظر', 'dev.monument': 'نُصب تذكاري',
   'devText.guard': 'حرّك الغازي واسرق بطاقة واحدة. يُحتسب ضمن «أقوى حراسة».',

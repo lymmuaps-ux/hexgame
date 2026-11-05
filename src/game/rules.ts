@@ -1,7 +1,7 @@
 import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import { M } from './msg';
 import {
-  Action, COSTS, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  Action, COSTS, FxEvent, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, WIN_POINTS, emptyRes, totalRes,
 } from './types';
 
@@ -149,6 +149,10 @@ function pay(s: GameState, p: number, cost: Partial<ResMap>) {
   }
 }
 
+function fx(s: GameState, e: FxEvent) {
+  (s.fx ??= { id: 1, list: [] }).list.push(e);
+}
+
 function log(s: GameState, msg: string) {
   s.log.push(msg);
   if (s.log.length > 200) s.log.splice(0, s.log.length - 200);
@@ -166,6 +170,7 @@ function updateLongestRoad(s: GameState) {
   const prev = holder;
   if (max >= 5 && leaders.length === 1) s.longestRoad = { owner: leaders[0], length: max };
   else s.longestRoad = { owner: null, length: max };
+  if (s.longestRoad.owner !== prev) fx(s, { t: 'award', award: 'road', from: prev, to: s.longestRoad.owner });
   if (s.longestRoad.owner !== prev && s.longestRoad.owner !== null)
     log(s, M('log.longestRoad', { name: s.players[s.longestRoad.owner].name, n: max }));
 }
@@ -256,6 +261,7 @@ export function applyAction(prev: GameState, p: number, a: Action, rng: Rng = Ma
 }
 
 function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
+  s.fx = { id: (s.fx?.id ?? 0) + 1, list: [] };
   if (s.phase === 'ended') return M('err.over');
   const me = s.players[p];
   if (!me) return M('err.unknownPlayer');
@@ -270,6 +276,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     pay(s, p, a.cards);
     delete s.pendingDiscards[p];
     log(s, M('log.discards', { name: me.name, n: need }));
+    fx(s, { t: 'discard', p, n: need });
     if (Object.keys(s.pendingDiscards).length === 0) s.stage = 'moveRaider';
     return;
   }
@@ -289,6 +296,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       from.hand[r] += w - g;
       me.hand[r] += g - w;
     }
+    fx(s, { t: 'trade', a: t.from, b: p, give: t.give, get: t.get });
     log(s, M('log.traded', { a: from.name, b: me.name, give: fmtRes(t.give), get: fmtRes(t.get) }));
     s.trade = null;
     return;
@@ -427,6 +435,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       pay(s, p, COSTS.dev);
       me.newDev.push(s.devDeck.pop()!);
       log(s, M('log.buyDev', { name: me.name }));
+      fx(s, { t: 'buyDev', p });
       checkWin(s);
       return;
     }
@@ -466,10 +475,12 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
         log(s, M('log.guard', { name: me.name }));
         if (me.guards >= 3 && me.guards > s.strongestGuard.size) {
           if (s.strongestGuard.owner !== p) log(s, M('log.strongestGuard', { name: me.name }));
+          if (s.strongestGuard.owner !== p) fx(s, { t: 'award', award: 'guard', from: s.strongestGuard.owner, to: p });
           s.strongestGuard = { owner: p, size: me.guards };
         }
         startRaider(s, s.stage === 'roll' ? 'roll' : 'actions');
       }
+      fx(s, { t: 'playDev', p, card: a.card });
       me.dev.splice(idx, 1);
       s.devPlayedThisTurn = true;
       checkWin(s);
@@ -485,6 +496,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.bank[a.give] += rate;
       me.hand[a.get]++;
       s.bank[a.get]--;
+      fx(s, { t: 'bank', p, give: a.give, n: rate, get: a.get });
       log(s, M('log.bankTrade', { name: me.name, n: rate, give: RES_INFO[a.give].icon, get: RES_INFO[a.get].icon }));
       return;
     }
@@ -527,4 +539,5 @@ function stealCard(s: GameState, p: number, target: number, rng: Rng) {
   victim.hand[r]--;
   s.players[p].hand[r]++;
   log(s, M('log.steal', { name: s.players[p].name, victim: victim.name }));
+  fx(s, { t: 'steal', from: target, to: p });
 }

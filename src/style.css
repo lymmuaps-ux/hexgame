@@ -247,3 +247,66 @@ html[dir='rtl'] .offer, html[dir='rtl'] .status, html[dir='rtl'] #log { text-ali
 .status { text-align: center; }
 .card { line-height: 1.15; }
 .card small { line-height: 1.1; }
+
+/* award cards */
+.awards { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.award {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 12px;
+  background: linear-gradient(135deg, #fffaf0, #f3e3bf); border: 2px dashed #b9b2a2; opacity: 0.85;
+  box-shadow: 0 3px 10px rgba(0,0,0,.12);
+}
+.award.owned { border: 2px solid var(--pc); opacity: 1; box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, transparent), 0 4px 14px rgba(0,0,0,.2); }
+.aicon { font-size: 1.5rem; width: 38px; height: 46px; display: grid; place-items: center; border-radius: 8px; background: #fff; border: 2px solid var(--pc); flex: none; }
+.award.owned .aicon { animation: shimmer 3s ease-in-out infinite; }
+@keyframes shimmer { 50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--pc) 70%, white); } }
+.atitle { font-weight: 700; font-size: 0.82rem; }
+.apts { font-size: 0.68rem; background: var(--accent); color: #fff; border-radius: 6px; padding: 0 5px; margin-inline-start: 2px; }
+.aowner { font-size: 0.74rem; opacity: 0.9; }
+.aowner i { opacity: 0.75; }
+.aowner .dot { width: 9px; height: 9px; margin-inline-end: 3px; }
+@media (max-width: 760px) {
+  .award { padding: 3px 5px; gap: 5px; }
+  .aicon { width: 26px; height: 32px; font-size: 1rem; }
+  .atitle { font-size: 0.68rem; } .apts { display: none; } .aowner { font-size: 0.62rem; }
+}
+
+/* flying cards for steals, trades, purchases */
+.flycard.back { background: repeating-linear-gradient(45deg, #6b4423 0 6px, #7d532d 6px 12px); border-color: #3b2a17; color: #fff; }
+.flycard.dev { background: linear-gradient(160deg, #fff, #e4d4ff); border-color: #8e6cc9; }
+.flycard.awardfly { width: 52px; height: 64px; font-size: 1.8rem; background: linear-gradient(160deg, #fff, #ffe7a6); border-color: var(--c); }
+
+/* banners */
+.banner {
+  position: absolute; left: 50%; top: 24%; z-index: 9; pointer-events: none; transform: translate(-50%, -50%);
+  animation: banner 1.9s cubic-bezier(.2,.8,.2,1) forwards; max-width: 92vw;
+}
+.banner span {
+  display: block; padding: 12px 28px; border-radius: 16px; font-weight: 800; font-size: clamp(1.1rem, 3.4vw, 1.9rem);
+  background: linear-gradient(135deg, #fff8ea, #f6e3b6); border: 3px solid var(--pc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--pc) 35%, transparent), 0 14px 40px rgba(0,0,0,.35); color: var(--ink);
+}
+@keyframes banner {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6) rotate(-4deg); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.08) rotate(1deg); }
+  24% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+  78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -80%) scale(0.92); }
+}
+
+/* victory confetti */
+.confetti {
+  position: absolute; top: -20px; width: 9px; height: 14px; z-index: 10; pointer-events: none; border-radius: 2px;
+  animation: confetti linear forwards;
+}
+@keyframes confetti { to { transform: translate(var(--drift), 110vh) rotate(var(--spin)); } }
+
+/* subtle life: the active player's card breathes, buttons lift */
+.player.active .dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@keyframes pulse-dot { 50% { transform: scale(1.35); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pc) 40%, transparent); } }
+.primary:not([disabled]) { box-shadow: 0 4px 0 #9a4f14; }
+.primary.big:not([disabled]) { animation: nudge-btn 1.6s ease-in-out infinite; }
+@keyframes nudge-btn { 50% { transform: translateY(-2px) scale(1.04); } }
+@media (prefers-reduced-motion: reduce) {
+  .banner, .confetti, .award.owned .aicon, .player.active .dot, .primary.big { animation-duration: 0.01s !important; animation-iteration-count: 1 !important; }
+}
+.apts { white-space: nowrap; display: inline-block; }

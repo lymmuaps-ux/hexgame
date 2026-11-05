@@ -41,6 +41,12 @@ export class Hud {
   private incoming: ResMap[] = [];
   private flights: { p: number; hex: number; r: Resource }[] = [];
   private flying = false;
+  // other animations
+  private seenFx: number | undefined | null = null;
+  private seenTurn: string | null = null;
+  private lastPhase: string | null = null;
+  private bannerQueue: { html: string; color: string }[] = [];
+  private bannerBusy = false;
   /** where a tile is on screen (provided by the 3D board) */
   hexScreenPos: (hex: number) => { x: number; y: number } = () => ({ x: innerWidth / 2, y: innerHeight / 2 });
   onChange: () => void = () => {};
@@ -74,6 +80,25 @@ export class Hud {
       this.seenProd = s.production.id;
       this.dealOut(s);
     }
+    const prevPhase = this.lastPhase;
+    this.lastPhase = s.phase;
+    const firstState = this.seenFx === null;
+    if (firstState) this.seenFx = s.fx?.id;
+    else if (s.fx && s.fx.id !== this.seenFx) {
+      this.seenFx = s.fx.id;
+      // run after the render below so the target elements exist
+      const list = s.fx.list;
+      if (list.length) setTimeout(() => this.playFx(s, list), 0);
+    }
+    const turnKey = s.phase === 'main' ? `${s.turnNumber}:${s.current}` : null;
+    if (turnKey && turnKey !== this.seenTurn) {
+      if (this.seenTurn !== null || prevPhase === 'setup') {
+        const p = s.players[s.current];
+        this.queueBanner(s.current === this.seat ? t('banner.yourTurn') : t('banner.turnOf', { name: esc(p.name) }), p.color);
+      }
+      this.seenTurn = turnKey;
+    }
+    if (s.phase === 'ended' && prevPhase && prevPhase !== 'ended') setTimeout(() => this.confetti(), 300);
     // drop modes that no longer make sense
     if (s.current !== this.seat || s.stage !== 'actions') this.mode = null;
     if (this.modal?.kind === 'trade' && (s.current !== this.seat || s.stage !== 'actions')) this.modal = null;
@@ -183,6 +208,178 @@ export class Hud {
     );
     anim.onfinish = arrive;
     setTimeout(arrive, dur + 400); // hidden tabs may never finish the animation
+  }
+
+  // ------------------------------------------------------------ animations
+
+  private layer() {
+    return this.root.parentElement ?? document.body;
+  }
+
+  private centerOf(sel: string): { x: number; y: number } {
+    const el = this.root.querySelector<HTMLElement>(sel);
+    if (!el) return { x: innerWidth / 2, y: innerHeight / 2 };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  private playerSel(p: number) {
+    return p === this.seat ? '.hand' : `.player[data-p="${p}"]`;
+  }
+
+  private bump(sel: string) {
+    const el = this.root.querySelector<HTMLElement>(sel);
+    if (!el) return;
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+
+  /** fly a small card from one point to another */
+  private fly(html: string, from: { x: number; y: number }, to: { x: number; y: number }, o: { delay?: number; cls?: string; fade?: boolean; color?: string; done?: () => void } = {}) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = `flycard ${o.cls ?? ''}`;
+      if (o.color) el.style.setProperty('--c', o.color);
+      el.innerHTML = html;
+      this.layer().appendChild(el);
+      const lift = Math.min(140, 50 + Math.hypot(to.x - from.x, to.y - from.y) * 0.2);
+      const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - lift };
+      const at = (p: { x: number; y: number }, sc: number, rot: number) =>
+        ({ transform: `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) scale(${sc}) rotate(${rot}deg)` });
+      const spin = (Math.random() - 0.5) * 50;
+      const anim = el.animate(
+        [
+          { ...at(from, 0.4, 0), opacity: 0 },
+          { ...at(mid, 1.15, spin), opacity: 1, offset: 0.5 },
+          { ...at(to, o.fade ? 0.3 : 0.7, 0), opacity: o.fade ? 0 : 0.95 },
+        ],
+        { duration: 800, easing: 'cubic-bezier(.45,.05,.4,1)', fill: 'forwards' },
+      );
+      let finished = false;
+      const end = () => {
+        if (finished) return;
+        finished = true;
+        el.remove();
+        o.done?.();
+      };
+      anim.onfinish = end;
+      setTimeout(end, 1300);
+    }, o.delay ?? 0);
+  }
+
+  private playFx(s: GameState, list: NonNullable<GameState['fx']>['list']) {
+    const centre = { x: innerWidth / 2, y: innerHeight * 0.45 };
+    const chip = (r: Resource) => `<span>${RES_INFO[r].icon}</span>`;
+    const back = '<span>🂠</span>';
+    for (const e of list) {
+      switch (e.t) {
+        case 'steal':
+          this.fly(back, this.centerOf(this.playerSel(e.from)), this.centerOf(this.playerSel(e.to)), {
+            cls: 'back', done: () => this.bump(this.playerSel(e.to)),
+          });
+          break;
+        case 'discard':
+          for (let i = 0; i < e.n; i++) this.fly(back, this.centerOf(this.playerSel(e.p)), centre, { cls: 'back', fade: true, delay: i * 90 });
+          break;
+        case 'buyDev':
+          this.fly('<span>🃏</span>', this.centerOf('[data-a="buyDev"]'), this.centerOf(this.playerSel(e.p)), {
+            cls: 'dev', done: () => this.bump(this.playerSel(e.p)),
+          });
+          break;
+        case 'bank': {
+          const from = this.centerOf(this.playerSel(e.p));
+          for (let i = 0; i < e.n; i++) this.fly(chip(e.give), from, centre, { color: RES_INFO[e.give].color, fade: true, delay: i * 110 });
+          this.fly(chip(e.get), centre, from, { color: RES_INFO[e.get].color, delay: e.n * 110 + 350, done: () => this.bump(this.playerSel(e.p)) });
+          break;
+        }
+        case 'trade': {
+          const a = this.centerOf(this.playerSel(e.a)), b = this.centerOf(this.playerSel(e.b));
+          let i = 0;
+          for (const r of RESOURCES) for (let k = 0; k < (e.give[r] ?? 0); k++) this.fly(chip(r), a, b, { color: RES_INFO[r].color, delay: i++ * 120 });
+          let j = 0;
+          for (const r of RESOURCES) for (let k = 0; k < (e.get[r] ?? 0); k++) this.fly(chip(r), b, a, { color: RES_INFO[r].color, delay: 150 + j++ * 120 });
+          break;
+        }
+        case 'playDev': {
+          const p = s.players[e.p];
+          this.queueBanner(`${DEV_INFO[e.card].icon} ${t('banner.play', { name: esc(p.name), card: t(`dev.${e.card}`) })}`, p.color);
+          break;
+        }
+        case 'award': {
+          const name = t(`award.${e.award}`);
+          const shelf = `.award[data-award="${e.award}"]`;
+          const icon = e.award === 'road' ? '🛣️' : '⚔️';
+          if (e.to !== null) {
+            const p = s.players[e.to];
+            this.queueBanner(`${icon} ${t('banner.award', { name: esc(p.name), award: name })}`, p.color);
+            this.fly(`<span>${icon}</span>`, this.centerOf(e.from !== null ? this.playerSel(e.from) : shelf), this.centerOf(this.playerSel(e.to)), {
+              cls: 'awardfly', color: p.color, done: () => { this.bump(this.playerSel(e.to!)); this.bump(shelf); },
+            });
+          } else {
+            this.queueBanner(`${icon} ${t('banner.awardLost', { award: name })}`, '#9aa0aa');
+            this.bump(shelf);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /** big announcement sliding across the middle of the screen (queued so they never overlap) */
+  private queueBanner(html: string, color: string) {
+    this.bannerQueue.push({ html, color });
+    if (!this.bannerBusy) this.nextBanner();
+  }
+
+  private nextBanner() {
+    const b = this.bannerQueue.shift();
+    if (!b) {
+      this.bannerBusy = false;
+      return;
+    }
+    this.bannerBusy = true;
+    const el = document.createElement('div');
+    el.className = 'banner';
+    el.style.setProperty('--pc', b.color);
+    el.innerHTML = `<span>${b.html}</span>`;
+    this.layer().appendChild(el);
+    setTimeout(() => el.remove(), 1900);
+    setTimeout(() => this.nextBanner(), 1500);
+  }
+
+  private confetti() {
+    const colors = ['#e53935', '#1e88e5', '#fdd835', '#43a047', '#fb8c00', '#8e24aa', '#ffffff'];
+    for (let i = 0; i < 160; i++) {
+      const c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = `${Math.random() * 100}vw`;
+      c.style.background = colors[i % colors.length];
+      c.style.setProperty('--drift', `${(Math.random() - 0.5) * 220}px`);
+      c.style.setProperty('--spin', `${(Math.random() - 0.5) * 1440}deg`);
+      c.style.animationDuration = `${2.4 + Math.random() * 2}s`;
+      c.style.animationDelay = `${Math.random() * 0.8}s`;
+      this.layer().appendChild(c);
+      setTimeout(() => c.remove(), 5500);
+    }
+  }
+
+  private awardsHtml(s: GameState) {
+    const card = (kind: 'road' | 'guard') => {
+      const owner = kind === 'road' ? s.longestRoad.owner : s.strongestGuard.owner;
+      const p = owner !== null ? s.players[owner] : null;
+      const n = kind === 'road' ? s.longestRoad.length : s.strongestGuard.size;
+      const detail = p
+        ? t(kind === 'road' ? 'award.roadLen' : 'award.guardSize', { n })
+        : t(kind === 'road' ? 'award.needRoad' : 'award.needGuard');
+      return `<div class="award ${p ? 'owned' : ''}" data-award="${kind}" style="--pc:${p?.color ?? '#b9b2a2'}">
+        <div class="aicon">${kind === 'road' ? '🛣️' : '⚔️'}</div>
+        <div class="abody">
+          <div class="atitle">${t(`award.${kind}`)} <span class="apts">${t('award.pts')}</span></div>
+          <div class="aowner">${p ? `<span class="dot"></span><b>${esc(p.name)}</b>${owner === this.seat ? ` ${t('hud.you')}` : ''} · ${detail}` : `<i>${t('award.unclaimed')}</i> · ${detail}`}</div>
+        </div></div>`;
+    };
+    return `<div class="awards">${card('road')}${card('guard')}</div>`;
   }
 
   toast(msg: string) {
@@ -427,7 +624,7 @@ export class Hud {
         ${dice}
         <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button></div>
       </div>
-      <div id="players">${players}</div>
+      <div id="players">${players}${s.phase === 'setup' ? '' : this.awardsHtml(s)}</div>
       <div id="log" class="${this.logOpen ? 'open' : ''}"><h4>${t('hud.log')}</h4><div class="lines">${log}</div></div>
       ${offer}
       <div id="bottom">

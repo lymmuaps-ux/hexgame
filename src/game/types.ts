@@ -85,6 +85,16 @@ export interface ProductionItem {
   n: number;
 }
 
+/** Visual events produced by the latest action, so every screen can animate them. */
+export type FxEvent =
+  | { t: 'steal'; from: number; to: number }
+  | { t: 'award'; award: 'road' | 'guard'; from: number | null; to: number | null }
+  | { t: 'trade'; a: number; b: number; give: Partial<ResMap>; get: Partial<ResMap> }
+  | { t: 'bank'; p: number; give: Resource; n: number; get: Resource }
+  | { t: 'discard'; p: number; n: number }
+  | { t: 'buyDev'; p: number }
+  | { t: 'playDev'; p: number; card: DevCard };
+
 export interface GameState {
   phase: 'setup' | 'main' | 'ended';
   players: Player[];
@@ -106,6 +116,7 @@ export interface GameState {
   rolledBy?: number;
   /** the latest batch of resources handed out (by a roll or a setup settlement), for animation */
   production?: { id: number; items: ProductionItem[] };
+  fx?: { id: number; list: FxEvent[] };
   hexes: Hex[];
   ports: Port[];
   raider: number;
