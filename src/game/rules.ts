@@ -316,6 +316,8 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (s.stage !== 'roll') return 'You already rolled.';
       const d: [number, number] = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
       s.dice = d;
+      s.rollId = (s.rollId ?? 0) + 1;
+      s.rolledBy = p;
       const sum = d[0] + d[1];
       log(s, `🎲 ${me.name} rolls ${sum}`);
       if (sum === 7) {

@@ -93,6 +93,10 @@ export interface GameState {
   stealFrom: number[];
   roadworksLeft: number;
   dice: [number, number] | null;
+  /** increments on every roll so viewers can animate it */
+  rollId?: number;
+  /** who made the latest roll */
+  rolledBy?: number;
   hexes: Hex[];
   ports: Port[];
   raider: number;

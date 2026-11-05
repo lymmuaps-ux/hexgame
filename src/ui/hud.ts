@@ -31,6 +31,10 @@ export class Hud {
   private discardKey = '';
   private logOpen = innerWidth > 900;
   private toastTimer = 0;
+  // dice animation: while the dice are in the air we keep showing the pre-roll state
+  private seenRoll: number | undefined | null = null;
+  private rolling: GameState | null = null;
+  private rollTimer = 0;
   onChange: () => void = () => {};
 
   constructor(private root: HTMLElement, private seat: number, private act: (a: Action) => void, private code: string) {
@@ -42,11 +46,48 @@ export class Hud {
   }
 
   setState(s: GameState) {
+    if (this.seenRoll === null) this.seenRoll = s.rollId;
+    else if (s.rollId !== this.seenRoll && s.dice) {
+      this.seenRoll = s.rollId;
+      this.rolling = s;
+      // fallback in case the board can't report the landing (e.g. the tab is hidden)
+      clearTimeout(this.rollTimer);
+      this.rollTimer = window.setTimeout(() => this.diceLanded(), 2600);
+      this.render();
+      return;
+    }
+    if (this.rolling) {
+      this.rolling = s; // keep the newest state for the reveal
+      return;
+    }
     this.state = s;
     // drop modes that no longer make sense
     if (s.current !== this.seat || s.stage !== 'actions') this.mode = null;
     if (this.modal?.kind === 'trade' && (s.current !== this.seat || s.stage !== 'actions')) this.modal = null;
     this.render();
+  }
+
+  /** called when the 3D dice come to rest: reveal the result */
+  diceLanded() {
+    const s = this.rolling;
+    if (!s) return;
+    clearTimeout(this.rollTimer);
+    this.rolling = null;
+    this.showRollPop(s);
+    this.setState(s);
+    this.onChange();
+  }
+
+  private showRollPop(s: GameState) {
+    if (!s.dice) return;
+    const sum = s.dice[0] + s.dice[1];
+    const who = s.rolledBy !== undefined ? s.players[s.rolledBy] : null;
+    const el = document.createElement('div');
+    el.className = `rollpop${sum === 7 ? ' seven' : ''}`;
+    el.innerHTML = `<b>${sum}</b><span>${who ? `${esc(who.name)} rolled` : 'Rolled'}${sum === 7 ? ' – the Raider strikes!' : ''}</span>`;
+    if (who) el.style.setProperty('--pc', who.color);
+    (this.root.parentElement ?? document.body).appendChild(el);
+    setTimeout(() => el.remove(), 2300);
   }
 
   toast(msg: string) {
@@ -61,7 +102,7 @@ export class Hud {
   /** what the 3D board should let me click */
   selectable(): Selectable | null {
     const s = this.state;
-    if (!s || s.phase === 'ended' || s.current !== this.seat) return null;
+    if (!s || this.rolling || s.phase === 'ended' || s.current !== this.seat) return null;
     const p = this.seat;
     if (s.phase === 'setup')
       return s.setupNeed === 'settlement'
@@ -160,6 +201,10 @@ export class Hud {
   // --------------------------------------------------------------- render
 
   private status(s: GameState): string {
+    if (this.rolling) {
+      const r = this.rolling.rolledBy;
+      return r === this.seat ? 'Rolling…' : `${esc(this.rolling.players[r ?? s.current].name)} is rolling…`;
+    }
     const cur = s.players[s.current];
     const mine = s.current === this.seat;
     const who = mine ? 'You' : esc(cur.name);
@@ -207,7 +252,9 @@ export class Hud {
       </div>`;
     }).join('');
 
-    const dice = s.dice
+    const dice = this.rolling
+      ? `<div class="dice rolling"><span>🎲</span><span>🎲</span></div>`
+      : s.dice
       ? `<div class="dice"><span>${DIE[s.dice[0]]}</span><span>${DIE[s.dice[1]]}</span><b>${s.dice[0] + s.dice[1]}</b></div>`
       : '';
 
@@ -232,7 +279,7 @@ export class Hud {
     };
 
     const controls = s.phase !== 'main' ? '' : `
-      ${mine && s.stage === 'roll' ? `<button class="primary big" data-a="roll">🎲 Roll dice</button>` : ''}
+      ${mine && s.stage === 'roll' && !this.rolling ? `<button class="primary big" data-a="roll">🎲 Roll dice</button>` : ''}
       ${bld('road', 'Road', '🛤️', me.roadsLeft)}
       ${bld('settlement', 'Settlement', '🏠', me.settlementsLeft)}
       ${bld('city', 'City', '🏰', me.citiesLeft)}

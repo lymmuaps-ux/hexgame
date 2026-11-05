@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GEO, HEX_SIZE } from '../game/board';
+import { Dice } from './dice';
 import { GameState, RES_INFO, TileType } from '../game/types';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
@@ -241,7 +242,14 @@ export class BoardView {
   private hovered: THREE.Object3D | null = null;
   private downAt = { x: 0, y: 0 };
   private water: THREE.Mesh;
+  private dice = new Dice();
+  private lastRoll: number | undefined | null = null;
+  private tokens = new Map<number, { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial }>();
+  private celebrate: { hexes: number[]; raider: boolean; t: number } | null = null;
+  private lastFrame = 0;
   onPick: (kind: PickKind, id: number) => void = () => {};
+  /** fires when the dice come to rest */
+  onDiceLanded: (sum: number) => void = () => {};
 
   constructor(private container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -278,7 +286,7 @@ export class BoardView {
     this.water.rotation.x = -Math.PI / 2;
     this.water.position.y = -0.12;
     this.water.receiveShadow = true;
-    this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider);
+    this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider, this.dice.group);
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.onMove(e));
@@ -326,7 +334,11 @@ export class BoardView {
   }
 
   private tick(t: number) {
+    const dt = Math.min(0.1, (t - (this.lastFrame || t)) / 1000);
+    this.lastFrame = t;
     this.controls.update();
+    this.dice.tick(dt);
+    this.animateCelebration(dt);
     const pulse = 0.55 + 0.35 * Math.sin(t / 220);
     for (const h of this.highlights.children) {
       const m = (h as THREE.Mesh).material as THREE.MeshBasicMaterial;
@@ -335,6 +347,11 @@ export class BoardView {
     }
     this.raider.position.lerp(this.raiderTarget, 0.12);
     this.raider.position.y = this.raiderTarget.y + Math.max(0, 0.6 * this.raider.position.distanceTo(this.raiderTarget));
+    if (this.celebrate?.raider) {
+      const k = Math.min(1, this.celebrate.t / 1.6);
+      this.raider.position.y += 0.35 * Math.abs(Math.sin(k * Math.PI * 3)) * (1 - k);
+      this.raider.rotation.y = k * Math.PI * 4;
+    }
     this.popping = this.popping.filter((p) => {
       p.t = Math.min(1, p.t + 0.06);
       const k = 1 + 0.4 * Math.sin(p.t * Math.PI) * (1 - p.t);
@@ -346,8 +363,25 @@ export class BoardView {
 
   // ----------------------------------------------------------- building
 
+  /** after a roll: producing number tokens hop and glow; on a 7 the Raider dances */
+  private animateCelebration(dt: number) {
+    const c = this.celebrate;
+    if (!c) return;
+    c.t += dt;
+    const k = Math.min(1, c.t / 2.2);
+    for (const id of c.hexes) {
+      const tok = this.tokens.get(id);
+      if (!tok) continue;
+      tok.mesh.position.y = 0.225 + 0.22 * Math.abs(Math.sin(k * Math.PI * 4)) * (1 - k);
+      tok.mesh.scale.setScalar(1 + 0.3 * (1 - k));
+      tok.mat.emissiveIntensity = 0.9 * (1 - k);
+    }
+    if (k >= 1) this.celebrate = null;
+  }
+
   private buildBoard(s: GameState) {
     this.boardGroup.clear();
+    this.tokens.clear();
     // sandy island base, a large hexagon around the tiles
     const sand = new THREE.Mesh(new THREE.CylinderGeometry(5.25, 5.6, 0.25, 6), std(0xe6d29a));
     sand.rotation.y = Math.PI / 6;
@@ -366,13 +400,14 @@ export class BoardView {
       deco.position.y = 0.2;
       g.add(tile, shadow(deco));
       if (h.number) {
-        const top = new THREE.MeshStandardMaterial({ map: tokenTexture(h.number), roughness: 0.7 });
+        const top = new THREE.MeshStandardMaterial({ map: tokenTexture(h.number), roughness: 0.7, emissive: 0xffc23d, emissiveIntensity: 0 });
         const side = std(0xd9c9a3);
         const tok = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32), [side, top, side]);
         tok.position.y = 0.225;
         tok.rotation.y = Math.PI / 2;
         tok.castShadow = true;
         g.add(tok);
+        this.tokens.set(h.id, { mesh: tok, mat: top });
       }
       this.boardGroup.add(g);
     }
@@ -450,6 +485,23 @@ export class BoardView {
         o.scale.setScalar(0.01);
         this.popping.push({ obj: o, t: 0 });
       }
+    }
+
+    // a new roll happened: toss the dice (not on first load / reconnect)
+    if (this.lastRoll === null) this.lastRoll = s.rollId;
+    else if (s.rollId !== this.lastRoll && s.dice) {
+      this.lastRoll = s.rollId;
+      const d = s.dice;
+      const sum = d[0] + d[1];
+      const raiderHex = s.raider;
+      this.dice.roll(d, () => {
+        this.celebrate = {
+          hexes: s.hexes.filter((h) => h.number === sum && h.id !== raiderHex).map((h) => h.id),
+          raider: sum === 7,
+          t: 0,
+        };
+        this.onDiceLanded(sum);
+      });
     }
 
     const rc = GEO.hexCoords[s.raider];

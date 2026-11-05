@@ -115,6 +115,7 @@ function onState(s: GameState) {
     board = new BoardView(document.getElementById('board')!);
     hud = new Hud(document.getElementById('hud')!, session.seat, (a) => session!.act(a), session.code);
     board.onPick = (k, id) => hud!.pick(k, id);
+    board.onDiceLanded = () => hud!.diceLanded();
     hud.onChange = () => board!.update(s0!, hud!.selectable());
   }
   s0 = s;
