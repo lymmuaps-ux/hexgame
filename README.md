@@ -15,6 +15,12 @@ It runs entirely in the browser, so you don't need a backend.
 - URL options: `?p2p` uses direct peer-to-peer (WebRTC) instead, `?tabs` plays across tabs of one browser
   with no network, and `?broker=wss://your-server/mqtt` (repeatable) uses your own MQTT servers.
 
+## Languages
+English and Arabic (with a full right-to-left layout). Each player picks their own language with the
+button in the lobby or the top bar; it's remembered per browser and defaults to Arabic on Arabic devices.
+Game messages travel as language-neutral codes (`src/game/msg.ts`), so players in the same game can use
+different languages. All texts live in `src/i18n.ts`.
+
 ## Run locally
 ```bash
 npm install
@@ -44,4 +50,5 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/net/` | MQTT relay (default), PeerJS and BroadcastChannel transports; host & client sessions |
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
+| `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |

@@ -48,6 +48,7 @@ function labelTexture(lines: string[], opts: { bg?: string; fg?: string; w?: num
   c.width = w;
   c.height = h;
   const g = c.getContext('2d')!;
+  g.direction = 'ltr'; // never mirror ratios like "3 : 1" when the page is right-to-left
   g.fillStyle = opts.bg ?? 'rgba(255,248,230,0.95)';
   g.beginPath();
   g.roundRect(4, 4, w - 8, h - 8, 28);
@@ -71,6 +72,7 @@ function tokenTexture(n: number) {
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const g = c.getContext('2d')!;
+  g.direction = 'ltr'; // never mirror ratios like "3 : 1" when the page is right-to-left
   g.fillStyle = '#f6ecd2';
   g.fillRect(0, 0, s, s);
   const red = n === 6 || n === 8;

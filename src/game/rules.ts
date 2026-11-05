@@ -1,6 +1,7 @@
 import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
+import { M } from './msg';
 import {
-  Action, COSTS, DEV_INFO, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  Action, COSTS, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, WIN_POINTS, emptyRes, totalRes,
 } from './types';
 
@@ -24,7 +25,7 @@ export function createGame(names: string[], rng: Rng = Math.random): GameState {
     dice: null, hexes: board.hexes, ports: board.ports, raider: board.raider,
     buildings: {}, roads: {}, devDeck: shuffle(DEV_DECK(), rng), devPlayedThisTurn: false,
     longestRoad: { owner: null, length: 0 }, strongestGuard: { owner: null, size: 0 },
-    trade: null, tradeSeq: 0, bank, log: ['The island has been discovered. Place your first settlements!'],
+    trade: null, tradeSeq: 0, bank, log: [M('log.start')],
     winner: null, turnNumber: 0,
   };
 }
@@ -138,7 +139,7 @@ function stealCandidates(s: GameState, p: number): number[] {
 // ---------------------------------------------------------------- helpers
 
 const fmtRes = (r: Partial<ResMap>) =>
-  RESOURCES.filter((k) => (r[k] ?? 0) > 0).map((k) => `${r[k]} ${RES_INFO[k].icon}`).join(' ') || 'nothing';
+  RESOURCES.filter((k) => (r[k] ?? 0) > 0).map((k) => `${r[k]} ${RES_INFO[k].icon}`).join(' ') || '—';
 
 function pay(s: GameState, p: number, cost: Partial<ResMap>) {
   for (const r of RESOURCES) {
@@ -166,7 +167,7 @@ function updateLongestRoad(s: GameState) {
   if (max >= 5 && leaders.length === 1) s.longestRoad = { owner: leaders[0], length: max };
   else s.longestRoad = { owner: null, length: max };
   if (s.longestRoad.owner !== prev && s.longestRoad.owner !== null)
-    log(s, `🛣️ ${s.players[s.longestRoad.owner].name} now holds the Longest Road (${max}).`);
+    log(s, M('log.longestRoad', { name: s.players[s.longestRoad.owner].name, n: max }));
 }
 
 function checkWin(s: GameState) {
@@ -174,7 +175,7 @@ function checkWin(s: GameState) {
   if (victoryPoints(s, p) >= WIN_POINTS) {
     s.phase = 'ended';
     s.winner = p;
-    log(s, `🏆 ${s.players[p].name} wins with ${victoryPoints(s, p)} points!`);
+    log(s, M('log.win', { name: s.players[p].name, n: victoryPoints(s, p) }));
   }
 }
 
@@ -197,7 +198,7 @@ function produce(s: GameState, roll: number) {
     if (demand > s.bank[r]) {
       if (takers > 1) {
         gains.forEach((g) => (g[r] = 0));
-        log(s, `The bank ran out of ${RES_INFO[r].label} – nobody receives any.`);
+        log(s, M('log.bankOut', { res: r }));
       } else gains.forEach((g) => (g[r] = Math.min(g[r], s.bank[r])));
     }
   }
@@ -217,7 +218,7 @@ function produce(s: GameState, roll: number) {
       s.players[i].hand[r] += g[r];
       s.bank[r] -= g[r];
     });
-    log(s, `${s.players[i].name} receives ${fmtRes(g)}`);
+    log(s, M('log.receives', { name: s.players[i].name, cards: fmtRes(g) }));
   });
 }
 
@@ -235,7 +236,7 @@ function nextSetup(s: GameState) {
     s.current = 0;
     s.stage = 'roll';
     s.turnNumber = 1;
-    log(s, `Setup complete. ${s.players[0].name}, roll the dice!`);
+    log(s, M('log.setupDone', { name: s.players[0].name }));
   } else s.current = s.setupOrder[s.setupIndex];
 }
 
@@ -255,50 +256,50 @@ export function applyAction(prev: GameState, p: number, a: Action, rng: Rng = Ma
 }
 
 function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
-  if (s.phase === 'ended') return 'The game is over.';
+  if (s.phase === 'ended') return M('err.over');
   const me = s.players[p];
-  if (!me) return 'Unknown player.';
+  if (!me) return M('err.unknownPlayer');
   const isTurn = p === s.current;
 
   // actions that may be taken out of turn
   if (a.type === 'discard') {
-    if (s.stage !== 'discard' || !s.pendingDiscards[p]) return 'You do not need to discard.';
+    if (s.stage !== 'discard' || !s.pendingDiscards[p]) return M('err.noDiscard');
     const need = s.pendingDiscards[p];
-    if (totalRes(a.cards) !== need) return `You must discard exactly ${need} cards.`;
-    if (!has(me.hand, a.cards) || RESOURCES.some((r) => (a.cards[r] ?? 0) < 0)) return 'Invalid cards.';
+    if (totalRes(a.cards) !== need) return M('err.discardExactly', { n: need });
+    if (!has(me.hand, a.cards) || RESOURCES.some((r) => (a.cards[r] ?? 0) < 0)) return M('err.invalidCards');
     pay(s, p, a.cards);
     delete s.pendingDiscards[p];
-    log(s, `${me.name} discards ${need} cards.`);
+    log(s, M('log.discards', { name: me.name, n: need }));
     if (Object.keys(s.pendingDiscards).length === 0) s.stage = 'moveRaider';
     return;
   }
   if (a.type === 'acceptTrade' || a.type === 'declineTrade') {
     const t = s.trade;
-    if (!t || t.id !== a.id) return 'That offer is no longer available.';
-    if (t.from === p) return 'You cannot respond to your own offer.';
+    if (!t || t.id !== a.id) return M('err.offerGone');
+    if (t.from === p) return M('err.ownOffer');
     if (a.type === 'declineTrade') {
       if (!t.declined.includes(p)) t.declined.push(p);
       return;
     }
     const from = s.players[t.from];
-    if (!has(me.hand, t.get)) return 'You do not have the requested cards.';
-    if (!has(from.hand, t.give)) return `${from.name} no longer has those cards.`;
+    if (!has(me.hand, t.get)) return M('err.noRequested');
+    if (!has(from.hand, t.give)) return M('err.offererLacks', { name: from.name });
     for (const r of RESOURCES) {
       const g = t.give[r] ?? 0, w = t.get[r] ?? 0;
       from.hand[r] += w - g;
       me.hand[r] += g - w;
     }
-    log(s, `🤝 ${from.name} traded ${fmtRes(t.give)} to ${me.name} for ${fmtRes(t.get)}`);
+    log(s, M('log.traded', { a: from.name, b: me.name, give: fmtRes(t.give), get: fmtRes(t.get) }));
     s.trade = null;
     return;
   }
 
-  if (!isTurn) return 'It is not your turn.';
+  if (!isTurn) return M('err.notTurn');
 
   // ------------------------------------------------------------- setup phase
   if (s.phase === 'setup') {
     if (a.type === 'buildSettlement' && s.setupNeed === 'settlement') {
-      if (!validSettlementSpots(s, p).includes(a.vertex)) return 'You cannot settle there.';
+      if (!validSettlementSpots(s, p).includes(a.vertex)) return M('err.cantSettle');
       s.buildings[a.vertex] = { owner: p, kind: 'settlement' };
       me.settlementsLeft--;
       s.lastSetupVertex = a.vertex;
@@ -314,37 +315,37 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
         }
         s.production = { id: (s.production?.id ?? 0) + 1, items };
         RESOURCES.forEach((r) => { me.hand[r] += g[r]; s.bank[r] -= g[r]; });
-        log(s, `${me.name} founds a settlement and gathers ${fmtRes(g)}`);
-      } else log(s, `${me.name} founds a settlement.`);
+        log(s, M('log.foundGather', { name: me.name, cards: fmtRes(g) }));
+      } else log(s, M('log.found', { name: me.name }));
       return;
     }
     if (a.type === 'buildRoad' && s.setupNeed === 'road') {
-      if (!validRoadSpots(s, p).includes(a.edge)) return 'The road must touch your new settlement.';
+      if (!validRoadSpots(s, p).includes(a.edge)) return M('err.setupRoad');
       s.roads[a.edge] = p;
       me.roadsLeft--;
       nextSetup(s);
       return;
     }
-    return `Place a ${s.setupNeed} first.`;
+    return M(s.setupNeed === 'road' ? 'err.placeRoad' : 'err.placeSettlement');
   }
 
   // -------------------------------------------------------------- main phase
   switch (a.type) {
     case 'roll': {
-      if (s.stage !== 'roll') return 'You already rolled.';
+      if (s.stage !== 'roll') return M('err.rolled');
       const d: [number, number] = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
       s.dice = d;
       s.rollId = (s.rollId ?? 0) + 1;
       s.rolledBy = p;
       const sum = d[0] + d[1];
-      log(s, `🎲 ${me.name} rolls ${sum}`);
+      log(s, M('log.rolls', { name: me.name, n: sum }));
       if (sum === 7) {
         s.pendingDiscards = {};
         s.players.forEach((pl, i) => {
           const n = totalRes(pl.hand);
           if (n > 7) s.pendingDiscards[i] = Math.floor(n / 2);
         });
-        log(s, '🌩️ The Raider stirs!');
+        log(s, M('log.raider'));
         s.afterRaider = 'actions';
         s.stage = Object.keys(s.pendingDiscards).length ? 'discard' : 'moveRaider';
       } else {
@@ -354,10 +355,10 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       return;
     }
     case 'moveRaider': {
-      if (s.stage !== 'moveRaider') return 'You cannot move the Raider now.';
-      if (!validRaiderHexes(s).includes(a.hex)) return 'Choose a different tile.';
+      if (s.stage !== 'moveRaider') return M('err.cantRaider');
+      if (!validRaiderHexes(s).includes(a.hex)) return M('err.otherTile');
       s.raider = a.hex;
-      log(s, `${me.name} moves the Raider.`);
+      log(s, M('log.movesRaider', { name: me.name }));
       const cands = stealCandidates(s, p);
       if (cands.length === 0) s.stage = s.afterRaider;
       else if (cands.length === 1) {
@@ -370,7 +371,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       return;
     }
     case 'steal': {
-      if (s.stage !== 'steal' || !s.stealFrom.includes(a.target)) return 'Invalid target.';
+      if (s.stage !== 'steal' || !s.stealFrom.includes(a.target)) return M('err.invalidTarget');
       stealCard(s, p, a.target, rng);
       s.stealFrom = [];
       s.stage = s.afterRaider;
@@ -378,10 +379,10 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     }
     case 'buildRoad': {
       const free = s.stage === 'roadworks';
-      if (s.stage !== 'actions' && !free) return 'You cannot build now.';
-      if (me.roadsLeft <= 0) return 'No roads left.';
-      if (!free && !canAfford(s, p, 'road')) return 'Not enough resources.';
-      if (!validRoadSpots(s, p).includes(a.edge)) return 'You cannot build a road there.';
+      if (s.stage !== 'actions' && !free) return M('err.cantBuild');
+      if (me.roadsLeft <= 0) return M('err.noRoads');
+      if (!free && !canAfford(s, p, 'road')) return M('err.notEnough');
+      if (!validRoadSpots(s, p).includes(a.edge)) return M('err.cantRoad');
       if (!free) pay(s, p, COSTS.road);
       s.roads[a.edge] = p;
       me.roadsLeft--;
@@ -394,58 +395,58 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       return;
     }
     case 'buildSettlement': {
-      if (s.stage !== 'actions') return 'You cannot build now.';
-      if (me.settlementsLeft <= 0) return 'No settlements left.';
-      if (!canAfford(s, p, 'settlement')) return 'Not enough resources.';
-      if (!validSettlementSpots(s, p).includes(a.vertex)) return 'You cannot settle there.';
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (me.settlementsLeft <= 0) return M('err.noSettlements');
+      if (!canAfford(s, p, 'settlement')) return M('err.notEnough');
+      if (!validSettlementSpots(s, p).includes(a.vertex)) return M('err.cantSettle');
       pay(s, p, COSTS.settlement);
       s.buildings[a.vertex] = { owner: p, kind: 'settlement' };
       me.settlementsLeft--;
-      log(s, `🏠 ${me.name} builds a settlement.`);
+      log(s, M('log.buildSettlement', { name: me.name }));
       updateLongestRoad(s); // may break an opponent's road
       checkWin(s);
       return;
     }
     case 'buildCity': {
-      if (s.stage !== 'actions') return 'You cannot build now.';
-      if (me.citiesLeft <= 0) return 'No cities left.';
-      if (!canAfford(s, p, 'city')) return 'Not enough resources.';
-      if (!validCitySpots(s, p).includes(a.vertex)) return 'Upgrade one of your settlements.';
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (me.citiesLeft <= 0) return M('err.noCities');
+      if (!canAfford(s, p, 'city')) return M('err.notEnough');
+      if (!validCitySpots(s, p).includes(a.vertex)) return M('err.upgradeOwn');
       pay(s, p, COSTS.city);
       s.buildings[a.vertex] = { owner: p, kind: 'city' };
       me.citiesLeft--;
       me.settlementsLeft++;
-      log(s, `🏰 ${me.name} upgrades to a city.`);
+      log(s, M('log.buildCity', { name: me.name }));
       checkWin(s);
       return;
     }
     case 'buyDev': {
-      if (s.stage !== 'actions') return 'You cannot buy now.';
-      if (!s.devDeck.length) return 'The fortune deck is empty.';
-      if (!canAfford(s, p, 'dev')) return 'Not enough resources.';
+      if (s.stage !== 'actions') return M('err.cantBuy');
+      if (!s.devDeck.length) return M('err.deckEmpty');
+      if (!canAfford(s, p, 'dev')) return M('err.notEnough');
       pay(s, p, COSTS.dev);
       me.newDev.push(s.devDeck.pop()!);
-      log(s, `🃏 ${me.name} buys a fortune card.`);
+      log(s, M('log.buyDev', { name: me.name }));
       checkWin(s);
       return;
     }
     case 'playDev': {
-      if (s.devPlayedThisTurn) return 'Only one fortune card per turn.';
-      if (a.card === 'monument') return 'Monuments score automatically.';
-      if (!(s.stage === 'actions' || (s.stage === 'roll' && a.card === 'guard'))) return 'You cannot play that now.';
+      if (s.devPlayedThisTurn) return M('err.oneDev');
+      if (a.card === 'monument') return M('err.monument');
+      if (!(s.stage === 'actions' || (s.stage === 'roll' && a.card === 'guard'))) return M('err.cantPlay');
       const idx = me.dev.indexOf(a.card);
-      if (idx < 0) return 'You do not have a playable card of that kind.';
+      if (idx < 0) return M('err.noCard');
       if (a.card === 'harvest') {
         const res = a.res ?? [];
-        if (res.length !== 2 || res.some((r) => !RESOURCES.includes(r))) return 'Pick 2 resources.';
+        if (res.length !== 2 || res.some((r) => !RESOURCES.includes(r))) return M('err.pick2');
         const need = emptyRes();
         res.forEach((r) => need[r]++);
-        if (!has(s.bank, need)) return 'The bank does not have those.';
+        if (!has(s.bank, need)) return M('err.bankLacks');
         res.forEach((r) => { me.hand[r]++; s.bank[r]--; });
-        log(s, `${DEV_INFO.harvest.icon} ${me.name} plays Harvest: ${fmtRes(need)}`);
+        log(s, M('log.harvest', { name: me.name, cards: fmtRes(need) }));
       } else if (a.card === 'embargo') {
         const r = a.res?.[0];
-        if (!r || !RESOURCES.includes(r)) return 'Pick a resource.';
+        if (!r || !RESOURCES.includes(r)) return M('err.pick1');
         let got = 0;
         s.players.forEach((pl, i) => {
           if (i === p) return;
@@ -453,18 +454,18 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
           pl.hand[r] = 0;
         });
         me.hand[r] += got;
-        log(s, `${DEV_INFO.embargo.icon} ${me.name} plays Embargo on ${RES_INFO[r].label} and collects ${got}.`);
+        log(s, M('log.embargo', { name: me.name, res: r, n: got }));
       } else if (a.card === 'roadworks') {
-        if (me.roadsLeft <= 0 || validRoadSpots(s, p).length === 0) return 'Nowhere to build roads.';
+        if (me.roadsLeft <= 0 || validRoadSpots(s, p).length === 0) return M('err.nowhereRoads');
         s.roadworksLeft = 2;
         s.afterRaider = 'actions';
         s.stage = 'roadworks';
-        log(s, `${DEV_INFO.roadworks.icon} ${me.name} plays Roadworks.`);
+        log(s, M('log.roadworks', { name: me.name }));
       } else if (a.card === 'guard') {
         me.guards++;
-        log(s, `${DEV_INFO.guard.icon} ${me.name} sends a Guard.`);
+        log(s, M('log.guard', { name: me.name }));
         if (me.guards >= 3 && me.guards > s.strongestGuard.size) {
-          if (s.strongestGuard.owner !== p) log(s, `⚔️ ${me.name} now has the Strongest Guard.`);
+          if (s.strongestGuard.owner !== p) log(s, M('log.strongestGuard', { name: me.name }));
           s.strongestGuard = { owner: p, size: me.guards };
         }
         startRaider(s, s.stage === 'roll' ? 'roll' : 'actions');
@@ -475,25 +476,25 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       return;
     }
     case 'bankTrade': {
-      if (s.stage !== 'actions') return 'You cannot trade now.';
-      if (a.give === a.get) return 'Pick two different resources.';
+      if (s.stage !== 'actions') return M('err.cantTrade');
+      if (a.give === a.get) return M('err.twoDifferent');
       const rate = tradeRates(s, p)[a.give];
-      if (me.hand[a.give] < rate) return `You need ${rate} ${RES_INFO[a.give].label}.`;
-      if (s.bank[a.get] < 1) return 'The bank is out of that resource.';
+      if (me.hand[a.give] < rate) return M('err.needRate', { n: rate, res: a.give });
+      if (s.bank[a.get] < 1) return M('err.bankOut');
       me.hand[a.give] -= rate;
       s.bank[a.give] += rate;
       me.hand[a.get]++;
       s.bank[a.get]--;
-      log(s, `${me.name} trades ${rate} ${RES_INFO[a.give].icon} with the bank for 1 ${RES_INFO[a.get].icon}`);
+      log(s, M('log.bankTrade', { name: me.name, n: rate, give: RES_INFO[a.give].icon, get: RES_INFO[a.get].icon }));
       return;
     }
     case 'offerTrade': {
-      if (s.stage !== 'actions') return 'You cannot trade now.';
+      if (s.stage !== 'actions') return M('err.cantTrade');
       const neg = RESOURCES.some((r) => (a.give[r] ?? 0) < 0 || (a.get[r] ?? 0) < 0);
-      if (neg || totalRes(a.give) === 0 || totalRes(a.get) === 0) return 'Offer something and ask for something.';
-      if (!has(me.hand, a.give)) return 'You do not have those cards.';
+      if (neg || totalRes(a.give) === 0 || totalRes(a.get) === 0) return M('err.offerBoth');
+      if (!has(me.hand, a.give)) return M('err.noCards');
       s.trade = { id: ++s.tradeSeq, from: p, give: a.give, get: a.get, declined: [] };
-      log(s, `${me.name} offers ${fmtRes(a.give)} for ${fmtRes(a.get)}`);
+      log(s, M('log.offers', { name: me.name, give: fmtRes(a.give), get: fmtRes(a.get) }));
       return;
     }
     case 'cancelTrade': {
@@ -501,7 +502,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       return;
     }
     case 'endTurn': {
-      if (s.stage !== 'actions') return 'Finish your current step first.';
+      if (s.stage !== 'actions') return M('err.finishStep');
       me.dev.push(...me.newDev);
       me.newDev = [];
       s.trade = null;
@@ -510,11 +511,11 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.current = (s.current + 1) % s.players.length;
       s.stage = 'roll';
       s.turnNumber++;
-      log(s, `— ${s.players[s.current].name}'s turn —`);
+      log(s, M('log.turn', { name: s.players[s.current].name }));
       return;
     }
   }
-  return 'Unknown action.';
+  return M('err.unknownAction');
 }
 
 function stealCard(s: GameState, p: number, target: number, rng: Rng) {
@@ -525,5 +526,5 @@ function stealCard(s: GameState, p: number, target: number, rng: Rng) {
   const r = pool[Math.floor(rng() * pool.length)];
   victim.hand[r]--;
   s.players[p].hand[r]++;
-  log(s, `${s.players[p].name} steals a card from ${victim.name}.`);
+  log(s, M('log.steal', { name: s.players[p].name, victim: victim.name }));
 }

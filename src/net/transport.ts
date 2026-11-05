@@ -1,5 +1,6 @@
 import Peer, { DataConnection } from 'peerjs';
 import { relayTransport } from './relay';
+import { M } from '../game/msg';
 
 /** A bidirectional message pipe between the host and one client. */
 export interface Link {
@@ -144,7 +145,7 @@ export const tabTransport: Transport = {
       const ch = new BroadcastChannel(PREFIX + code);
       const me = Math.random().toString(36).slice(2);
       const msg: ((m: any) => void)[] = [];
-      const t = setTimeout(() => reject(new Error('No game found with that code (in this browser).')), 3000);
+      const t = setTimeout(() => reject(new Error(M('net.noGame'))), 3000);
       ch.onmessage = (ev: MessageEvent<BcMsg>) => {
         const m = ev.data;
         if (m.to !== me) return;

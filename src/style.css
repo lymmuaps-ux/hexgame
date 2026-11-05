@@ -25,7 +25,7 @@ input {
   background: #fff; width: 100%; color: var(--ink);
 }
 input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15); }
-.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--pc); border: 2px solid rgba(0,0,0,.35); margin-right: 6px; vertical-align: -1px; }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--pc); border: 2px solid rgba(0,0,0,.35); vertical-align: -1px; margin-inline-end: 6px; }
 
 /* -------------------------------------------------------------- lobby */
 .lobby {
@@ -69,16 +69,16 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
   box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: calc(100% - 20px);
 }
 .brand { font-weight: 800; color: var(--wood); white-space: nowrap; }
-.code { padding: 2px 8px; font-size: 0.75rem; font-family: ui-monospace, monospace; margin-left: 6px; }
+.code { padding: 2px 8px; font-size: 0.75rem; font-family: ui-monospace, monospace; margin-inline-start: 6px; }
 .status { font-weight: 600; }
 .dice { display: flex; align-items: center; gap: 2px; font-size: 1.8rem; line-height: 1; }
-.dice b { font-size: 1.1rem; margin-left: 6px; background: var(--wood); color: #fff; border-radius: 8px; padding: 3px 8px; }
+.dice b { font-size: 1.1rem; margin-inline-start: 6px; background: var(--wood); color: #fff; border-radius: 8px; padding: 3px 8px; }
 .topbtns { display: flex; gap: 4px; }
 .topbtns button { padding: 4px 10px; }
 
-#players { position: absolute; top: 76px; left: 10px; display: flex; flex-direction: column; gap: 8px; width: 210px; }
+#players { position: absolute; top: 76px; inset-inline-start: 10px; display: flex; flex-direction: column; gap: 8px; width: 210px; }
 .player {
-  background: rgba(255, 248, 234, 0.94); border-radius: 12px; padding: 8px 10px; border-left: 6px solid var(--pc);
+  background: rgba(255, 248, 234, 0.94); border-radius: 12px; padding: 8px 10px; border-inline-start: 6px solid var(--pc);
   box-shadow: 0 4px 12px rgba(0,0,0,.15); transition: transform 0.2s;
 }
 .player.active { transform: translateX(6px); box-shadow: 0 0 0 3px var(--accent), 0 4px 12px rgba(0,0,0,.2); }
@@ -90,7 +90,7 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
 .badge { background: var(--accent); color: #fff; font-size: 0.75rem; padding: 2px 6px; border-radius: 6px; }
 
 #log {
-  position: absolute; top: 76px; right: 10px; width: 270px; max-height: 45vh; display: none; flex-direction: column;
+  position: absolute; top: 76px; inset-inline-end: 10px; width: 270px; max-height: 45vh; display: none; flex-direction: column;
   background: rgba(255, 248, 234, 0.94); border-radius: 12px; padding: 8px 10px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
 }
 #log.open { display: flex; }
@@ -141,10 +141,10 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
   position: relative; background: var(--paper); border: 3px solid var(--wood); border-radius: 18px; padding: 20px;
   width: min(520px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4);
 }
-.modal h3 { margin: 0 0 12px; padding-right: 30px; }
+.modal h3 { margin: 0 0 12px; padding-inline-end: 30px; }
 .modal p { margin: 10px 0 6px; }
 .modal > button.primary { width: 100%; margin-top: 14px; padding: 11px; }
-.modal .close { position: absolute; top: 12px; right: 12px; padding: 2px 9px; }
+.modal .close { position: absolute; top: 12px; inset-inline-end: 12px; padding: 2px 9px; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .respick.on, .tabs button.on { background: var(--accent); color: #fff; }
 .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -168,11 +168,11 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
 @media (max-width: 760px) {
   #top { flex-wrap: wrap; gap: 6px 10px; justify-content: center; font-size: 0.85rem; top: 6px; }
   .brand { display: none; }
-  #players { top: auto; bottom: auto; top: 92px; left: 6px; width: 150px; gap: 4px; }
+  #players { top: auto; bottom: auto; top: 92px; inset-inline-start: 6px; width: 150px; gap: 4px; }
   .player { padding: 4px 6px; font-size: 0.8rem; }
   .pstats { gap: 4px; font-size: 0.72rem; }
   .player.active { transform: none; }
-  #log { top: 92px; right: 6px; width: 200px; }
+  #log { top: 92px; inset-inline-end: 6px; width: 200px; }
   .card { width: 50px; height: 64px; }
   .card span { font-size: 1.15rem; }
   .card small { display: none; }
@@ -229,3 +229,21 @@ input.bad { border-color: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15)
 .build.blocked small { color: #b3261e; opacity: 1; font-weight: 600; }
 #toast { max-width: min(90%, 460px); text-align: center; line-height: 1.35; }
 #toast { z-index: 8; }
+
+/* language switch + Arabic / right-to-left */
+.panel { position: relative; }
+.langbtn { position: absolute; top: 14px; inset-inline-end: 14px; padding: 4px 12px; font-size: 0.9rem; }
+.langtop { font-size: 0.85rem; }
+html[dir='rtl'] .player.active { transform: translateX(-6px); }
+html[dir='rtl'] .player.active.bump { animation-name: bump-active-rtl; }
+@keyframes bump-active-rtl { 40% { transform: translateX(-6px) scale(1.08); } }
+html[dir='rtl'] .offer, html[dir='rtl'] .status, html[dir='rtl'] #log { text-align: right; }
+:root:lang(ar) { font-family: 'Cairo', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif; }
+:root:lang(ar) .panel h1, :root:lang(ar) .brand { font-family: system-ui, sans-serif; }
+@media (max-width: 760px) { html[dir='rtl'] .player.active { transform: none; } }
+
+/* the top bar may use the full width before wrapping (an absolutely positioned box at left:50% otherwise only gets half) */
+#top { width: max-content; }
+.status { text-align: center; }
+.card { line-height: 1.15; }
+.card small { line-height: 1.1; }

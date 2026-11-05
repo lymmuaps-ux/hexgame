@@ -31,6 +31,7 @@ function faceTexture(v: number) {
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const g = c.getContext('2d')!;
+  g.direction = 'ltr'; // never mirror ratios like "3 : 1" when the page is right-to-left
   g.fillStyle = '#fbf6ea';
   g.fillRect(0, 0, s, s);
   g.fillStyle = v === 1 ? '#c62828' : '#2b2118';

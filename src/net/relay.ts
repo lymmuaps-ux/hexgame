@@ -1,5 +1,6 @@
 import mqtt, { MqttClient } from 'mqtt';
 import type { Link, Transport } from './transport';
+import { M } from '../game/msg';
 
 /**
  * Relay transport: every message goes through free public MQTT servers over secure
@@ -56,7 +57,7 @@ class Bus {
         if (settled) return;
         settled = true;
         bus.close();
-        reject(new Error('Could not reach any game server. Check your internet connection and try again.'));
+        reject(new Error(M('net.noServer')));
       }, 12000);
     });
   }
@@ -173,7 +174,7 @@ export const relayTransport: Transport = {
         if (Date.now() - started > 15000) {
           clearInterval(hello);
           bus.close();
-          reject(new Error('No game found with that code. Check the code, and make sure the host still has the game open.'));
+          reject(new Error(M('net.noGame')));
           return;
         }
         bus.publish(`${base}/host`, { from: me, kind: 'hello' });

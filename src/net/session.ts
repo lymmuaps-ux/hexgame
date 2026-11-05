@@ -1,5 +1,6 @@
 import { applyAction, createGame } from '../game/rules';
 import { Action, GameState, MAX_PLAYERS } from '../game/types';
+import { M } from '../game/msg';
 import { Link, getTransport } from './transport';
 
 export interface LobbyInfo {
@@ -99,7 +100,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     }
   };
   const handle = (seat: number, a: Action, reply: (m: HostMsg) => void) => {
-    if (!state) return reply({ t: 'error', msg: 'The game has not started yet.' });
+    if (!state) return reply({ t: 'error', msg: M('net.notStarted') });
     const r = applyAction(state, seat, a);
     if (!r.ok) return reply({ t: 'error', msg: r.error });
     state = r.state;
@@ -114,10 +115,10 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
         let idx = seats.findIndex((s, i) => i > 0 && s.clientId === m.clientId);
         if (idx < 0) idx = seats.findIndex((s, i) => i > 0 && !s.link && s.name.toLowerCase() === nm.toLowerCase());
         if (idx < 0) {
-          if (state) return link.send({ t: 'reject', msg: 'This game has already started.' } satisfies HostMsg);
-          if (seats.length >= MAX_PLAYERS) return link.send({ t: 'reject', msg: 'The game is full.' } satisfies HostMsg);
+          if (state) return link.send({ t: 'reject', msg: M('net.started') } satisfies HostMsg);
+          if (seats.length >= MAX_PLAYERS) return link.send({ t: 'reject', msg: M('net.full') } satisfies HostMsg);
           if (seats.some((s) => s.name.toLowerCase() === nm.toLowerCase()))
-            return link.send({ t: 'reject', msg: 'That name is taken – pick another.' } satisfies HostMsg);
+            return link.send({ t: 'reject', msg: M('net.nameTaken') } satisfies HostMsg);
           seats.push({ name: nm, clientId: m.clientId, link });
           idx = seats.length - 1;
         } else {
@@ -146,9 +147,9 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     act: (a) => handle(0, a, (m) => m.t === 'error' && ev.onError(m.msg)),
     start: () => {
       if (state) return;
-      if (seats.length < 2) return ev.onError('You need at least 2 players.');
+      if (seats.length < 2) return ev.onError(M('net.need2'));
       state = createGame(seats.map((s) => s.name));
-      state.log.push(`Turn order: ${seats.map((s) => s.name).join(' → ')}`);
+      state.log.push(M('log.order', { names: seats.map((s) => s.name).join(' → ') }));
       publish();
     },
   };
