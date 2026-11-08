@@ -5,6 +5,7 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'view.to2d': 'Switch to the classic flat board', 'view.to3d': 'Switch to the 3D island',
   'log.counter': '{name} counters: gives {give} for {get}',
   'offer.counter': 'Counter', 'offer.counterLine': '<b>{name}</b> counters: gives {give}, wants {get}',
   'offer.take': 'Accept', 'm.counterTitle': 'Your counter-offer', 'm.sendCounter': 'Send counter-offer',
@@ -165,6 +166,7 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'view.to2d': 'التبديل إلى اللوحة الكلاسيكية المسطحة', 'view.to3d': 'التبديل إلى الجزيرة ثلاثية الأبعاد',
   'log.counter': '{name} يقدّم عرضًا مضادًا: يعطي {give} مقابل {get}',
   'offer.counter': 'عرض مضاد', 'offer.counterLine': '<b>{name}</b> يعرض بالمقابل: يعطي {give} ويريد {get}',
   'offer.take': 'قبول', 'm.counterTitle': 'عرضك المضاد', 'm.sendCounter': 'إرسال العرض المضاد',

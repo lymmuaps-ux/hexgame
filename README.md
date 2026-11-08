@@ -32,6 +32,11 @@ It runs entirely in the browser, so you don't need a backend.
 - **Presence:** each panel shows what that player is doing (trading…, typing…, picking a road spot…), and
   everyone sees where the active player is pointing on the board.
 
+## Two board views
+The 3D island is the default. The 🗺️ button in the top bar switches to a **classic flat board**: illustrated,
+printed-style tiles (our own artwork, painted in code) in a sea frame on a wooden table, seen from straight above.
+🧊 switches back. Everything (building, dice, animations, reactions) works in both; the choice is remembered.
+
 ## Install as an app
 The site is a Progressive Web App: on Android/desktop Chrome or Edge use the **📲 Install app** button in the
 lobby (or the browser menu); on iPhone/iPad open it in Safari → Share → **Add to Home Screen**. It then opens
@@ -73,6 +78,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/render/tiles.ts` | detailed terrain tiles (forests, windmills, mountains, mines, oasis…) |
 | `src/render/island.ts` | beach, shallows, surf, palms, lighthouse, boats, seagulls |
+| `src/render/classic.ts` | the classic flat board view: painted tiles, sea frame, table |
 | `src/render/social.ts` | thrown emoji reactions and other players' pointers |
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |

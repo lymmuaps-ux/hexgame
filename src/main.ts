@@ -189,6 +189,14 @@ function onState(s: GameState) {
     };
     board.onAim = (pt) => hud!.aimed(pt);
 
+    // 3D island (default) or the classic flat board, remembered per browser
+    const savedView = store.get('hexhold-view') === '2d' ? '2d' : '3d';
+    hud.view = savedView;
+    hud.onViewChange = (v) => {
+      store.set('hexhold-view', v);
+      board!.setView(v);
+    };
+
     // presence: what I'm doing, and where I point on the board during my turn
     hud.onPresence = (focus) => session!.presence({ focus, pt: null });
     let lastSent = 0, pending: ReturnType<typeof setTimeout> | null = null, pointing = false;
@@ -213,6 +221,7 @@ function onState(s: GameState) {
   s0 = s;
   hud.setState(s);
   board!.update(s, hud.selectable());
+  if (board!.view !== hud.view) board!.setView(hud.view);
 }
 let s0: GameState | null = null;
 // handy for debugging from the browser console

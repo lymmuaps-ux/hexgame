@@ -56,6 +56,8 @@ export class Hud {
   onReact: (r: Reaction) => void = () => {};
   onAimChange: () => void = () => {};
   onPresence: (focus: string) => void = () => {};
+  view: '3d' | '2d' = '3d';
+  onViewChange: (v: '3d' | '2d') => void = () => {};
   /** names of whoever sent voice, by seat (spectators have negative seats) */
   private talkerNames = new Map<number, string>();
   private talkTimer = 0;
@@ -631,6 +633,10 @@ export class Hud {
         });
         break;
       case 'listen': this.voice?.setListen(!this.voice.listen); break;
+      case 'view':
+        this.view = this.view === '3d' ? '2d' : '3d';
+        this.onViewChange(this.view);
+        break;
       case 'react':
         if (this.aim) this.setAim(null);
         else this.paletteOpen = !this.paletteOpen;
@@ -875,7 +881,7 @@ export class Hud {
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
       ${this.talkersHtml()}
       ${this.paletteOpen ? `<div class="palette">${REACTIONS.map((e) => `<button data-a="pickReact" data-v="${e}">${e}</button>`).join('')}</div>` : ''}

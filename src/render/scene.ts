@@ -5,6 +5,7 @@ import { Dice } from './dice';
 import { Clouds, Ocean, Particles } from './effects';
 import { IslandDecor } from './island';
 import { Social } from './social';
+import { classicSurround, flatTile } from './classic';
 import { decorateTile, tileBase } from './tiles';
 import { GameState, RES_INFO } from '../game/types';
 
@@ -171,6 +172,13 @@ export class BoardView {
   aiming = false;
   onAim: (pt: { x: number; z: number }) => void = () => {};
   readonly social: Social;
+  // view mode: '3d' (default) or '2d' classic printed board seen from above
+  view: '3d' | '2d' = '3d';
+  private terrain3d: THREE.Object3D[] = [];
+  private classic = new THREE.Group();
+  private saved3d: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private camGoal: { pos: THREE.Vector3; target: THREE.Vector3; t: number; fromPos: THREE.Vector3; fromTarget: THREE.Vector3 } | null = null;
+  private fog: THREE.Fog | null = null;
   private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.22);
 
   constructor(private container: HTMLElement) {
@@ -247,8 +255,7 @@ export class BoardView {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     // pull back on narrow (phone) screens so the island fits
-    const fit = w / h < 1 ? 1 / Math.max(w / h, 0.5) : 1;
-    this.camera.position.setLength(13.5 * Math.min(fit, 1.8));
+    this.camera.position.sub(this.controls.target).setLength(this.viewDistance()).add(this.controls.target);
     this.camera.updateProjectionMatrix();
   }
 
@@ -276,6 +283,15 @@ export class BoardView {
   private tick(t: number) {
     const dt = Math.min(0.1, (t - (this.lastFrame || t)) / 1000);
     this.lastFrame = t;
+    if (this.camGoal) {
+      // glide the camera between the two views
+      const g = this.camGoal;
+      g.t = Math.min(1, g.t + dt * 1.8);
+      const e = g.t < 0.5 ? 2 * g.t * g.t : 1 - Math.pow(-2 * g.t + 2, 2) / 2;
+      this.camera.position.lerpVectors(g.fromPos, g.pos, e);
+      this.controls.target.lerpVectors(g.fromTarget, g.target, e);
+      if (g.t >= 1) this.camGoal = null;
+    }
     this.controls.update();
     this.dice.tick(dt);
     this.animateCelebration(dt);
@@ -350,6 +366,8 @@ export class BoardView {
     this.boardGroup.clear();
     this.tokens.clear();
     this.spinners = [];
+    this.terrain3d = [];
+    this.classic = new THREE.Group();
 
     for (const h of s.hexes) {
       const c = GEO.hexCoords[h.id];
@@ -358,7 +376,14 @@ export class BoardView {
       const deco = decorateTile(h.type, h.id);
       deco.position.y = 0.22;
       deco.traverse((o) => o.userData.spin && this.spinners.push(o));
-      g.add(tileBase(h.type), deco);
+      const terrain = new THREE.Group();
+      terrain.add(tileBase(h.type), deco);
+      this.terrain3d.push(terrain);
+      g.add(terrain);
+      // the same tile as a flat printed illustration for the classic view
+      const flat = flatTile(h.type, h.id * 7 + (h.number ?? 0));
+      flat.position.set(c.x, 0.2, c.z);
+      this.classic.add(flat);
       if (h.number) {
         const top = new THREE.MeshStandardMaterial({ map: tokenTexture(h.number), roughness: 0.7, emissive: 0xffc23d, emissiveIntensity: 0 });
         const side = std(0xd9c9a3);
@@ -379,6 +404,20 @@ export class BoardView {
       const dir = new THREE.Vector2(e.x - hc.x, e.z - hc.z).normalize();
       const px = e.x + dir.x * 0.55, pz = e.z + dir.y * 0.55;
       docks.push({ x: px, z: pz });
+      // classic view: flat wooden pier from the harbour to its two corners, drawn on the sea
+      const woodMat = std(0x8a5a33);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.03, 0.36), woodMat);
+      deck.position.set(px, 0.165, pz);
+      deck.rotation.y = -Math.atan2(dir.y, dir.x);
+      this.classic.add(deck);
+      for (const v of [e.a, e.b]) {
+        const vv = GEO.vertices[v];
+        const len = Math.hypot(vv.x - px, vv.z - pz);
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(len, 0.025, 0.07), std(0x9b6b3e));
+        plank.position.set((vv.x + px) / 2, 0.17, (vv.z + pz) / 2);
+        plank.rotation.y = -Math.atan2(vv.z - pz, vv.x - px);
+        this.classic.add(plank);
+      }
       // little wooden pier on posts
       const dock = new THREE.Group();
       dock.position.set(px, 0, pz);
@@ -415,6 +454,50 @@ export class BoardView {
     const seed = s.hexes.reduce((h, x, n) => (h * 31 + x.type.charCodeAt(0) * (n + 1) + (x.number ?? 0)) % 100000, 7);
     this.decor = new IslandDecor(docks, seed);
     this.boardGroup.add(this.decor.group);
+    this.classic.add(classicSurround());
+    this.boardGroup.add(this.classic);
+    this.applyView(false);
+  }
+
+  /** switch between the 3D island and the flat classic board */
+  setView(v: '3d' | '2d') {
+    if (v === this.view) return;
+    this.view = v;
+    this.applyView(true);
+  }
+
+  private applyView(animate: boolean) {
+    const flat = this.view === '2d';
+    this.terrain3d.forEach((o) => (o.visible = !flat));
+    this.classic.visible = flat;
+    if (this.decor) this.decor.group.visible = !flat;
+    this.water.visible = !flat;
+    this.clouds.group.visible = !flat;
+    this.fog ??= this.scene.fog as THREE.Fog;
+    this.scene.fog = flat ? null : this.fog;
+    this.controls.enableRotate = !flat;
+    let pos: THREE.Vector3, target: THREE.Vector3;
+    if (flat) {
+      this.saved3d = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+      target = new THREE.Vector3(0, 0, 0);
+      pos = new THREE.Vector3(0, this.viewDistance(), 0.001);
+    } else {
+      pos = this.saved3d?.pos ?? new THREE.Vector3(0, 9.5, 7.5).setLength(this.viewDistance());
+      target = this.saved3d?.target ?? new THREE.Vector3(0, 0, 1.1);
+    }
+    if (!animate) {
+      this.camera.position.copy(pos);
+      this.controls.target.copy(target);
+      return;
+    }
+    this.camGoal = { pos, target, t: 0, fromPos: this.camera.position.clone(), fromTarget: this.controls.target.clone() };
+  }
+
+  /** how far the camera sits so the board fits the screen */
+  private viewDistance() {
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const fit = w / h < 1 ? 1 / Math.max(w / h, 0.5) : 1;
+    return (this.view === '2d' ? 15.5 : 13.5) * Math.min(fit, 1.8);
   }
 
   update(s: GameState, sel: Selectable | null) {
