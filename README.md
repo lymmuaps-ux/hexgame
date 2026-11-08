@@ -24,6 +24,19 @@ It runs entirely in the browser, so you don't need a backend.
   game works), so expect about a second of delay — like a walkie-talkie. The browser asks for microphone
   permission the first time.
 
+## Playing together
+- **Reactions:** tap 😀, pick an emoji, then tap a player or any spot on the island to throw it
+  (tomatoes leave a splat for a few seconds).
+- **Counter-offers:** answer a trade offer with your own terms; the whole table sees the counters and the
+  player who offered can accept one.
+- **Presence:** each panel shows what that player is doing (trading…, typing…, picking a road spot…), and
+  everyone sees where the active player is pointing on the board.
+
+## Install as an app
+The site is a Progressive Web App: on Android/desktop Chrome or Edge use the **📲 Install app** button in the
+lobby (or the browser menu); on iPhone/iPad open it in Safari → Share → **Add to Home Screen**. It then opens
+full screen from the home screen like a normal app.
+
 ## Languages
 English and Arabic (with a full right-to-left layout). Each player picks their own language with the
 button in the lobby or the top bar; it's remembered per browser and defaults to Arabic on Arabic devices.
@@ -60,6 +73,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/render/tiles.ts` | detailed terrain tiles (forests, windmills, mountains, mines, oasis…) |
 | `src/render/island.ts` | beach, shallows, surf, palms, lighthouse, boats, seagulls |
+| `src/render/social.ts` | thrown emoji reactions and other players' pointers |
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
 | `src/ui/voice.ts` | walkie-talkie voice chat over the relay |

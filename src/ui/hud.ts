@@ -10,13 +10,18 @@ import { Selectable } from '../render/scene';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
 import type { Voice } from './voice';
+import type { Reaction } from '../net/session';
+
+const REACTIONS = ['🍅', '👏', '😂', '😱', '🔥', '❤️', '😡', '🎉'];
+const FOCUS_ICON: Record<string, string> = { trade: '🤝', road: '🛤️', settlement: '🏠', city: '🏰', chat: '💬', rules: '📖', discard: '🃏', card: '🃏', steal: '🦹', raider: '🌩️', react: '🎯' };
 
 type Mode = null | 'road' | 'settlement' | 'city';
 type Modal =
   | null
   | { kind: 'trade'; tab: 'bank' | 'players'; give: ResMap; get: ResMap; bankGive: Resource | null; bankGet: Resource | null }
   | { kind: 'pick'; card: 'harvest' | 'embargo'; picks: Resource[] }
-  | { kind: 'help' };
+  | { kind: 'help' }
+  | { kind: 'counter'; id: number; give: ResMap; get: ResMap };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const resChip = (r: Resource, n?: number) =>
@@ -43,6 +48,14 @@ export class Hud {
   })();
   chat: Chat | null = null;
   voice: Voice | null = null;
+  // reactions & presence
+  aim: string | null = null;
+  private paletteOpen = false;
+  private presence = new Map<number, string>();
+  private lastFocus = '';
+  onReact: (r: Reaction) => void = () => {};
+  onAimChange: () => void = () => {};
+  onPresence: (focus: string) => void = () => {};
   /** names of whoever sent voice, by seat (spectators have negative seats) */
   private talkerNames = new Map<number, string>();
   private talkTimer = 0;
@@ -119,6 +132,7 @@ export class Hud {
     // drop modes that no longer make sense
     if (s.current !== this.seat || s.stage !== 'actions') this.mode = null;
     if (this.modal?.kind === 'trade' && (s.current !== this.seat || s.stage !== 'actions')) this.modal = null;
+    if (this.modal?.kind === 'counter' && s.trade?.id !== this.modal.id) this.modal = null;
     this.render();
   }
 
@@ -567,7 +581,7 @@ export class Hud {
         if (m?.kind === 'trade' && m.bankGive && m.bankGet) this.act({ type: 'bankTrade', give: m.bankGive, get: m.bankGet });
         break;
       case 'adj': {
-        if (m?.kind !== 'trade') break;
+        if (m?.kind !== 'trade' && m?.kind !== 'counter') break;
         const [side, r, d] = v.split(':') as ['give' | 'get', Resource, string];
         const max = side === 'give' ? s.players[this.seat].hand[r] : 19;
         m[side][r] = Math.max(0, Math.min(max, m[side][r] + Number(d)));
@@ -582,6 +596,23 @@ export class Hud {
       case 'accept': this.act({ type: 'acceptTrade', id: Number(v) }); break;
       case 'decline': this.act({ type: 'declineTrade', id: Number(v) }); break;
       case 'cancelOffer': this.act({ type: 'cancelTrade' }); break;
+      case 'counter': {
+        const o = s.trade;
+        if (!o) break;
+        const me = s.players[this.seat];
+        // start from the mirror of the offer: give what they asked for (as far as I have it), ask for what they offered
+        const give = emptyRes(), get = emptyRes();
+        RESOURCES.forEach((r) => { give[r] = Math.min(me.hand[r], o.get[r] ?? 0); get[r] = o.give[r] ?? 0; });
+        this.modal = { kind: 'counter', id: o.id, give, get };
+        break;
+      }
+      case 'sendCounter':
+        if (m?.kind === 'counter') {
+          this.act({ type: 'counterTrade', id: m.id, give: { ...m.give }, get: { ...m.get } });
+          this.modal = null;
+        }
+        break;
+      case 'acceptCounter': if (s.trade) this.act({ type: 'acceptCounter', id: s.trade.id, p: Number(v) }); break;
       case 'disc': {
         const [r, d] = v.split(':') as [Resource, string];
         this.discard[r] = Math.max(0, Math.min(s.players[this.seat].hand[r], this.discard[r] + Number(d)));
@@ -600,6 +631,20 @@ export class Hud {
         });
         break;
       case 'listen': this.voice?.setListen(!this.voice.listen); break;
+      case 'react':
+        if (this.aim) this.setAim(null);
+        else this.paletteOpen = !this.paletteOpen;
+        break;
+      case 'pickReact':
+        this.paletteOpen = false;
+        this.setAim(v);
+        break;
+      case 'reactAt':
+        if (this.aim) {
+          this.onReact({ e: this.aim, to: { p: Number(v) } });
+          this.setAim(null);
+        }
+        break;
       case 'side':
         this.sideMini = !this.sideMini;
         try { localStorage.setItem('hexhold-side', this.sideMini ? 'mini' : 'full'); } catch { /* ignore */ }
@@ -614,7 +659,79 @@ export class Hud {
 
   // --------------------------------------------------------------- render
 
+  private setAim(e: string | null) {
+    this.aim = e;
+    this.onAimChange();
+  }
+
+  /** a tap on the island while aiming */
+  aimed(pt: { x: number; z: number }) {
+    if (!this.aim) return;
+    this.onReact({ e: this.aim, to: pt });
+    this.setAim(null);
+    this.render();
+  }
+
+  isMyTurn() {
+    return !!this.state && this.state.current === this.seat && this.state.phase !== 'ended';
+  }
+
+  /** what I'm doing right now, shared with the table */
+  focus(): string {
+    const s = this.state;
+    if (!s) return 'idle';
+    if (this.aim) return 'react';
+    const m = this.modal;
+    if (m?.kind === 'trade' || m?.kind === 'counter') return 'trade';
+    if (m?.kind === 'help') return 'rules';
+    if (m?.kind === 'pick') return 'card';
+    if (s.stage === 'discard' && s.pendingDiscards[this.seat]) return 'discard';
+    if (document.activeElement?.closest?.('#chat')) return 'chat';
+    if (s.current === this.seat && s.phase === 'setup') return s.setupNeed;
+    if (s.current === this.seat && s.phase === 'main') {
+      if (s.stage === 'steal') return 'steal';
+      if (s.stage === 'moveRaider') return 'raider';
+      if (s.stage === 'roadworks') return 'road';
+      if (this.mode) return this.mode;
+    }
+    return 'idle';
+  }
+
+  syncPresence() {
+    const f = this.focus();
+    if (f !== this.lastFocus) {
+      this.lastFocus = f;
+      this.onPresence(f);
+    }
+  }
+
+  setPresence(from: number, focus: string) {
+    if (this.presence.get(from) === focus) return;
+    this.presence.set(from, focus);
+    this.render();
+  }
+
+  /** an emoji thrown at a player's panel */
+  reactAtPlayer(from: number, p: number, e: string) {
+    const fromSel = from >= 0 ? this.playerSel(from) : '#top';
+    this.fly(`<span>${e}</span>`, this.centerOf(fromSel), this.centerOf(this.playerSel(p)), {
+      cls: 'emoji',
+      done: () => {
+        this.bump(this.playerSel(p));
+        const c = this.centerOf(this.playerSel(p));
+        const pop = document.createElement('div');
+        pop.className = 'panelsplat';
+        pop.textContent = e;
+        pop.style.left = `${c.x}px`;
+        pop.style.top = `${c.y}px`;
+        this.layer().appendChild(pop);
+        setTimeout(() => pop.remove(), 1200);
+      },
+    });
+  }
+
   private status(s: GameState): string {
+    if (this.aim) return t('react.aim', { e: this.aim });
     if (this.rolling) {
       const r = this.rolling.rolledBy;
       return r === this.seat ? t('st.rollingMe') : t('st.rolling', { name: esc(this.rolling.players[r ?? s.current].name) });
@@ -662,7 +779,9 @@ export class Hud {
         s.strongestGuard.owner === i ? `<span class="badge" title="${t('hud.strongestGuard')}">⚔️ ${s.strongestGuard.size}</span>` : '',
       ].join('');
       const talking = this.voice && (i === this.seat ? this.voice.live : this.voice.isSpeaking(i));
-      return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}" data-p="${i}" style="--pc:${p.color}">
+      const doing = i !== this.seat ? this.presence.get(i) : undefined;
+      const doingHtml = doing && doing !== 'idle' ? `<div class="pdoing">${FOCUS_ICON[doing] ?? '…'} ${t(`pres.${doing}`)}</div>` : '';
+      return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}${this.aim ? ' aimable' : ''}" data-p="${i}" ${this.aim ? `data-a="reactAt" data-v="${i}"` : ''} style="--pc:${p.color}">${doingHtml}
         <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
@@ -728,8 +847,17 @@ export class Hud {
         const can = RESOURCES.every((r) => me.hand[r] >= (tradeOffer.get[r] ?? 0));
         offer = `<div class="offer incoming">${t('offer.incoming', { name: esc(s.players[tradeOffer.from].name), give: fmt(tradeOffer.give), get: fmt(tradeOffer.get) })}
           <button class="primary" data-a="accept" data-v="${tradeOffer.id}" ${can ? '' : 'disabled'}>${t('offer.accept')}</button>
+          <button data-a="counter">${t('offer.counter')}</button>
           <button data-a="decline" data-v="${tradeOffer.id}">${t('offer.decline')}</button></div>`;
       }
+      // counter-offers are visible to the whole table; only the proposer can take one
+      const counters = (tradeOffer.counters ?? []).map((c) => {
+        const mineOffer = tradeOffer.from === this.seat;
+        const affordable = RESOURCES.every((r) => me.hand[r] >= (c.get[r] ?? 0));
+        return `<div class="counter" style="--pc:${s.players[c.p].color}"><span class="dot"></span>${t('offer.counterLine', { name: esc(s.players[c.p].name), give: fmt(c.give), get: fmt(c.get) })}${
+          mineOffer ? ` <button class="primary" data-a="acceptCounter" data-v="${c.p}" ${affordable ? '' : 'disabled'}>${t('offer.take')}</button>` : ''}</div>`;
+      }).join('');
+      if (counters) offer = offer ? offer.replace(/<\/div>$/, `<div class="counters">${counters}</div></div>`) : `<div class="offer">${counters}</div>`;
     }
 
     const log = s.log.slice(-60).map((l) => `<div>${tr(l, true)}</div>`).join('');
@@ -740,16 +868,17 @@ export class Hud {
       handHtml = `<div class="spectating">${t('spec.watching')}</div>`;
       controlsHtml = '';
       // spectators see offers but can't answer them
-      offer = offer.replace(/<button[^>]*data-a="(accept|decline)"[^>]*>[\s\S]*?<\/button>/g, '');
+      offer = offer.replace(/<button[^>]*data-a="(accept|decline|counter|acceptCounter)"[^>]*>[\s\S]*?<\/button>/g, '');
     }
     this.root.innerHTML = `
       <div id="top">
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
       ${this.talkersHtml()}
+      ${this.paletteOpen ? `<div class="palette">${REACTIONS.map((e) => `<button data-a="pickReact" data-v="${e}">${e}</button>`).join('')}</div>` : ''}
       <div id="players" class="${this.sideMini ? 'mini' : ''}"><button class="sidetoggle" data-a="side" title="${t(this.sideMini ? 'side.show' : 'side.hide')}">${this.sideMini ? '👥 <span class="arr">›</span>' : '<span class="arr">‹</span>'}</button>${players}${s.phase === 'setup' ? '' : this.awardsHtml(s)}</div>
       <div id="log" class="${this.logOpen ? 'open' : ''}"><h4>${t('hud.log')}</h4><div class="lines">${log}</div></div>
       ${offer}
@@ -760,6 +889,7 @@ export class Hud {
       ${this.modalHtml(s)}
 `;
     this.animateChanges(s);
+    this.syncPresence();
     const lines = this.root.querySelector('#log .lines');
     if (lines) lines.scrollTop = lines.scrollHeight;
   }
@@ -803,6 +933,12 @@ export class Hud {
         `<p>${t(`devText.${m.card}`)}</p><div class="row">${RESOURCES.map((r) =>
           `<button class="respick" data-a="pickRes" data-v="${r}">${RES_INFO[r].icon} ${resLabel(r)}</button>`).join('')}</div>
           ${m.picks.length ? `<p>${t('m.picked', { list: m.picks.map((r) => RES_INFO[r].icon).join(' ') })}</p>` : ''}`);
+    }
+    if (m.kind === 'counter') {
+      const pickers = (k: 'give' | 'get') => `<div class="pickers">${RESOURCES.map((r) => `<div class="picker">${resChip(r, k === 'give' ? me.hand[r] : undefined)}
+        <button data-a="adj" data-v="${k}:${r}:-1">−</button><b>${m[k][r]}</b><button data-a="adj" data-v="${k}:${r}:1">+</button></div>`).join('')}</div>`;
+      return wrap(t('m.counterTitle'), `<p>${t('m.give')}</p>${pickers('give')}<p>${t('m.want')}</p>${pickers('get')}
+        <button class="primary" data-a="sendCounter" ${totalRes(m.give) && totalRes(m.get) ? '' : 'disabled'}>${t('m.sendCounter')}</button>`);
     }
     // trade
     const rates = tradeRates(s, this.seat);

@@ -12,13 +12,21 @@ export interface LobbyInfo {
 
 /** a short piece of recorded speech (base64 audio + its mime type) */
 export interface VoiceChunk { d: string; m: string }
+/** an emoji thrown at a player or at a point on the island */
+export interface Reaction { e: string; to: { p: number } | { x: number; z: number } }
+/** what someone is doing right now, and where the active player points on the board */
+export interface Presence { focus: string; pt?: { x: number; z: number } | null }
 
 type ClientMsg =
   | { t: 'join'; name: string; clientId: string }
   | { t: 'action'; action: Action }
   | { t: 'chat'; text: string }
-  | { t: 'voice'; chunk: VoiceChunk };
+  | { t: 'voice'; chunk: VoiceChunk }
+  | { t: 'react'; r: Reaction }
+  | { t: 'presence'; pr: Presence };
 type HostMsg =
+  | { t: 'react'; from: number; r: Reaction }
+  | { t: 'presence'; from: number; pr: Presence }
   | { t: 'welcome'; seat: number }
   | { t: 'voice'; from: number; name: string; chunk: VoiceChunk }
   | { t: 'reject'; msg: string }
@@ -32,6 +40,8 @@ export interface SessionEvents {
   onError(msg: string): void;
   onDisconnect(): void;
   onVoice?(from: number, name: string, chunk: VoiceChunk): void;
+  onReact?(from: number, r: Reaction): void;
+  onPresence?(from: number, pr: Presence): void;
 }
 
 /** What the UI talks to; identical API for host and clients. */
@@ -43,6 +53,8 @@ export interface Session {
   act(a: Action): void;
   chat(text: string): void;
   voice(chunk: VoiceChunk): void;
+  react(r: Reaction): void;
+  presence(pr: Presence): void;
   start?(): void;
 }
 
@@ -137,6 +149,27 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     broadcast(msg, from);
     if (seat !== 0) ev.onVoice?.(seat, nameOf(seat), msg.chunk);
   };
+  // reactions & presence are relayed to everyone else, never stored
+  const lastReact = new Map<number, number[]>();
+  const react = (seat: number, r: Reaction, from?: Link) => {
+    if (!r || typeof r.e !== 'string' || r.e.length > 16 || !r.to) return;
+    const now = Date.now();
+    const recent = (lastReact.get(seat) ?? []).filter((t) => now - t < 2000);
+    if (recent.length >= 6) return; // anti-spam: 6 per 2 seconds
+    recent.push(now);
+    lastReact.set(seat, recent);
+    const to = 'p' in r.to ? { p: Number(r.to.p) } : { x: Number(r.to.x) || 0, z: Number(r.to.z) || 0 };
+    const msg: HostMsg = { t: 'react', from: seat, r: { e: r.e, to } };
+    broadcast(msg, from);
+    if (seat !== 0) ev.onReact?.(seat, msg.r);
+  };
+  const presence = (seat: number, pr: Presence, from?: Link) => {
+    if (!pr || typeof pr.focus !== 'string' || pr.focus.length > 32) return;
+    const pt = pr.pt ? { x: Number(pr.pt.x) || 0, z: Number(pr.pt.z) || 0 } : null;
+    const msg: HostMsg = { t: 'presence', from: seat, pr: { focus: pr.focus, pt } };
+    broadcast(msg, from);
+    if (seat !== 0) ev.onPresence?.(seat, msg.pr);
+  };
   const handle = (seat: number, a: Action, reply: (m: HostMsg) => void) => {
     if (!state) return reply({ t: 'error', msg: M('net.notStarted') });
     const r = applyAction(state, seat, a);
@@ -186,6 +219,10 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
         chat(seat, m.text);
       } else if (m.t === 'voice') {
         voice(seat, m.chunk, link);
+      } else if (m.t === 'react') {
+        react(seat, m.r, link);
+      } else if (m.t === 'presence') {
+        presence(seat, m.pr, link);
       }
     });
     link.onClose(() => {
@@ -210,6 +247,8 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     act: (a) => handle(0, a, (m) => m.t === 'error' && ev.onError(m.msg)),
     chat: (text) => chat(0, text),
     voice: (chunk) => voice(0, chunk),
+    react: (r) => react(0, r),
+    presence: (pr) => presence(0, pr),
     start: () => {
       if (state) return;
       if (seats.length < 2) return ev.onError(M('net.need2'));
@@ -235,6 +274,8 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
       act: (a) => link.send({ t: 'action', action: a } satisfies ClientMsg),
       chat: (text) => link.send({ t: 'chat', text } satisfies ClientMsg),
       voice: (chunk) => link.send({ t: 'voice', chunk } satisfies ClientMsg),
+      react: (r) => link.send({ t: 'react', r } satisfies ClientMsg),
+      presence: (pr) => link.send({ t: 'presence', pr } satisfies ClientMsg),
     };
     link.onMessage((m: HostMsg) => {
       switch (m.t) {
@@ -250,6 +291,8 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
           break;
         case 'error': ev.onError(m.msg); break;
         case 'voice': ev.onVoice?.(m.from, m.name, m.chunk); break;
+        case 'react': ev.onReact?.(m.from, m.r); break;
+        case 'presence': ev.onPresence?.(m.from, m.pr); break;
       }
     });
     link.onClose(() => ev.onDisconnect());

@@ -24,7 +24,20 @@ function choose(s: GameState): { p: number; a: Action } {
     case 'steal': return { p, a: { type: 'steal', target: pick(s.stealFrom) } };
     case 'roadworks': return { p, a: { type: 'buildRoad', edge: pick(validRoadSpots(s, p)) } };
   }
+  // trading: sometimes offer, others counter, the proposer accepts a counter
+  if (s.trade && s.trade.from === p) {
+    const c = s.trade.counters?.[0];
+    if (c && Math.random() < 0.7) return { p, a: { type: 'acceptCounter', id: s.trade.id, p: c.p } };
+    if (Math.random() < 0.5) {
+      const other = pick(s.players.map((_, i) => i).filter((i) => i !== p));
+      const oh = s.players[other].hand;
+      const g = RESOURCES.find((r) => oh[r] > 0);
+      if (g) return { p: other, a: { type: 'counterTrade', id: s.trade.id, give: { [g]: 1 }, get: { [pick([...RESOURCES])]: 1 } } };
+    }
+  }
   const opts: Action[] = [{ type: 'endTurn' }];
+  const mine = RESOURCES.find((r) => s.players[p].hand[r] > 0);
+  if (mine && !s.trade) opts.push({ type: 'offerTrade', give: { [mine]: 1 }, get: { [pick([...RESOURCES])]: 1 } });
   const me = s.players[p];
   const c = validCitySpots(s, p); if (c.length) opts.push({ type: 'buildCity', vertex: pick(c) }, { type: 'buildCity', vertex: pick(c) });
   const v = validSettlementSpots(s, p); if (v.length) opts.push({ type: 'buildSettlement', vertex: pick(v) }, { type: 'buildSettlement', vertex: pick(v) });

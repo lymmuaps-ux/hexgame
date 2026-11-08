@@ -302,6 +302,39 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     return;
   }
 
+  if (a.type === 'counterTrade') {
+    const t = s.trade;
+    if (!t || t.id !== a.id) return M('err.offerGone');
+    if (t.from === p) return M('err.ownOffer');
+    const neg = RESOURCES.some((r) => (a.give[r] ?? 0) < 0 || (a.get[r] ?? 0) < 0);
+    if (neg || totalRes(a.give) === 0 || totalRes(a.get) === 0) return M('err.offerBoth');
+    if (!has(me.hand, a.give)) return M('err.noCards');
+    const clean = (r: Partial<ResMap>) => Object.fromEntries(RESOURCES.filter((k) => (r[k] ?? 0) > 0).map((k) => [k, Math.floor(r[k]!)]));
+    t.counters = [...(t.counters ?? []).filter((c) => c.p !== p), { p, give: clean(a.give), get: clean(a.get) }];
+    t.declined = t.declined.filter((d) => d !== p);
+    log(s, M('log.counter', { name: me.name, give: fmtRes(a.give), get: fmtRes(a.get) }));
+    return;
+  }
+  if (a.type === 'acceptCounter') {
+    const t = s.trade;
+    if (!t || t.id !== a.id) return M('err.offerGone');
+    if (t.from !== p) return M('err.notTurn');
+    const c = t.counters?.find((x) => x.p === a.p);
+    if (!c) return M('err.offerGone');
+    const other = s.players[c.p];
+    if (!has(me.hand, c.get)) return M('err.noCards');
+    if (!has(other.hand, c.give)) return M('err.offererLacks', { name: other.name });
+    for (const r of RESOURCES) {
+      const g = c.get[r] ?? 0, w = c.give[r] ?? 0; // proposer gives what the counter asks for
+      me.hand[r] += w - g;
+      other.hand[r] += g - w;
+    }
+    fx(s, { t: 'trade', a: p, b: c.p, give: c.get, get: c.give });
+    log(s, M('log.traded', { a: me.name, b: other.name, give: fmtRes(c.get), get: fmtRes(c.give) }));
+    s.trade = null;
+    return;
+  }
+
   if (!isTurn) return M('err.notTurn');
 
   // ------------------------------------------------------------- setup phase

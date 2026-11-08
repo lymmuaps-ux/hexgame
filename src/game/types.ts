@@ -76,6 +76,8 @@ export interface TradeOffer {
   give: Partial<ResMap>;
   get: Partial<ResMap>;
   declined: number[];
+  /** counter-offers: `give` is what the countering player gives, `get` what they want */
+  counters?: { p: number; give: Partial<ResMap>; get: Partial<ResMap> }[];
 }
 
 export interface ProductionItem {
@@ -152,6 +154,8 @@ export type Action =
   | { type: 'offerTrade'; give: Partial<ResMap>; get: Partial<ResMap> }
   | { type: 'acceptTrade'; id: number }
   | { type: 'declineTrade'; id: number }
+  | { type: 'counterTrade'; id: number; give: Partial<ResMap>; get: Partial<ResMap> }
+  | { type: 'acceptCounter'; id: number; p: number }
   | { type: 'cancelTrade' }
   | { type: 'endTurn' };
 

@@ -4,6 +4,7 @@ import { GEO, HEX_SIZE } from '../game/board';
 import { Dice } from './dice';
 import { Clouds, Ocean, Particles } from './effects';
 import { IslandDecor } from './island';
+import { Social } from './social';
 import { decorateTile, tileBase } from './tiles';
 import { GameState, RES_INFO } from '../game/types';
 
@@ -164,6 +165,13 @@ export class BoardView {
   onPick: (kind: PickKind, id: number) => void = () => {};
   /** fires when the dice come to rest */
   onDiceLanded: (sum: number) => void = () => {};
+  /** where the pointer is on the island (null when off it) */
+  onHover: (pt: { x: number; z: number } | null) => void = () => {};
+  /** while aiming a reaction, a tap on the island lands here instead of picking */
+  aiming = false;
+  onAim: (pt: { x: number; z: number }) => void = () => {};
+  readonly social: Social;
+  private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.22);
 
   constructor(private container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -195,6 +203,8 @@ export class BoardView {
 
     this.water = this.ocean.mesh;
     this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider, this.dice.group, this.clouds.group, this.particles.group);
+    this.social = new Social(this.particles);
+    this.scene.add(this.social.group);
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.onMove(e));
@@ -202,8 +212,14 @@ export class BoardView {
     el.addEventListener('pointerup', (e) => {
       if (Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 6) return;
       this.onMove(e);
+      if (this.aiming) {
+        const pt = this.groundPoint();
+        if (pt) this.onAim(pt);
+        return;
+      }
       if (this.hovered) this.onPick(this.hovered.userData.kind, this.hovered.userData.id);
     });
+    el.addEventListener('pointerleave', () => this.onHover(null));
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
     this.renderer.setAnimationLoop((t) => this.tick(t));
@@ -245,8 +261,16 @@ export class BoardView {
     if (obj !== this.hovered) {
       if (this.hovered) this.hovered.scale.setScalar(1);
       this.hovered = obj;
-      this.renderer.domElement.style.cursor = obj ? 'pointer' : 'grab';
     }
+    this.renderer.domElement.style.cursor = this.aiming ? 'crosshair' : obj ? 'pointer' : 'grab';
+    this.onHover(this.groundPoint());
+  }
+
+  /** the point on the island under the pointer (null when it's over the sea) */
+  private groundPoint() {
+    const v = new THREE.Vector3();
+    if (!this.ray.ray.intersectPlane(this.ground, v) || Math.hypot(v.x, v.z) > 6) return null;
+    return { x: Math.round(v.x * 100) / 100, z: Math.round(v.z * 100) / 100 };
   }
 
   private tick(t: number) {
@@ -293,6 +317,7 @@ export class BoardView {
     });
     this.ocean.tick(t);
     this.decor?.tick(t, dt);
+    this.social.tick(dt, t);
     for (const sp of this.spinners) sp.rotation.z += sp.userData.spin * dt;
     this.clouds.tick(dt);
     this.particles.tick(dt);

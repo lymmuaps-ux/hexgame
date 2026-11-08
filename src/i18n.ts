@@ -5,6 +5,14 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'log.counter': '{name} counters: gives {give} for {get}',
+  'offer.counter': 'Counter', 'offer.counterLine': '<b>{name}</b> counters: gives {give}, wants {get}',
+  'offer.take': 'Accept', 'm.counterTitle': 'Your counter-offer', 'm.sendCounter': 'Send counter-offer',
+  'react.title': 'Throw a reaction', 'react.aim': 'Tap a player or a spot on the island to throw {e} – tap again to cancel',
+  'pres.trade': 'trading…', 'pres.road': 'picking a road spot…', 'pres.settlement': 'picking a settlement spot…',
+  'pres.city': 'picking a city…', 'pres.chat': 'typing…', 'pres.rules': 'reading the rules…', 'pres.discard': 'choosing discards…',
+  'pres.card': 'playing a card…', 'pres.steal': 'choosing a victim…', 'pres.raider': 'moving the Raider…', 'pres.react': 'aiming a reaction…',
+  'pwa.install': '📲 Install app', 'pwa.ios': 'To install: tap the Share button, then “Add to Home Screen”.',
   'voice.mic': 'Microphone is off – tap to talk', 'voice.live': 'You are live – tap to mute',
   'voice.denied': 'Microphone access was blocked. Allow it in your browser settings to talk.',
   'voice.unsupported': 'Voice chat is not supported in this browser.',
@@ -157,6 +165,14 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'log.counter': '{name} يقدّم عرضًا مضادًا: يعطي {give} مقابل {get}',
+  'offer.counter': 'عرض مضاد', 'offer.counterLine': '<b>{name}</b> يعرض بالمقابل: يعطي {give} ويريد {get}',
+  'offer.take': 'قبول', 'm.counterTitle': 'عرضك المضاد', 'm.sendCounter': 'إرسال العرض المضاد',
+  'react.title': 'أرسل تفاعلًا', 'react.aim': 'انقر على لاعب أو مكان في الجزيرة لرمي {e} – انقر مرة أخرى للإلغاء',
+  'pres.trade': 'يتفاوض…', 'pres.road': 'يختار مكان طريق…', 'pres.settlement': 'يختار مكان مستوطنة…',
+  'pres.city': 'يختار مدينة…', 'pres.chat': 'يكتب…', 'pres.rules': 'يقرأ القواعد…', 'pres.discard': 'يختار ما يتخلّص منه…',
+  'pres.card': 'يلعب بطاقة…', 'pres.steal': 'يختار ضحيته…', 'pres.raider': 'يحرّك الغازي…', 'pres.react': 'يصوّب تفاعلًا…',
+  'pwa.install': '📲 ثبّت التطبيق', 'pwa.ios': 'للتثبيت: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية».',
   'voice.mic': 'الميكروفون مغلق – انقر للتحدث', 'voice.live': 'أنت تتحدث الآن – انقر لكتم الصوت',
   'voice.denied': 'تم حظر الوصول إلى الميكروفون. اسمح به من إعدادات المتصفح للتحدث.',
   'voice.unsupported': 'المحادثة الصوتية غير مدعومة في هذا المتصفح.',

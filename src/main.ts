@@ -1,6 +1,6 @@
 import './style.css';
 import { GameState } from './game/types';
-import { LobbyInfo, Session, SessionEvents, clearSavedHost, hostGame, joinGame, loadSavedHost } from './net/session';
+import { LobbyInfo, Reaction, Session, SessionEvents, clearSavedHost, hostGame, joinGame, loadSavedHost } from './net/session';
 import { BoardView } from './render/scene';
 import { Hud } from './ui/hud';
 import { Chat } from './ui/chat';
@@ -26,6 +26,27 @@ const store = {
 
 // ------------------------------------------------------------------ lobby
 
+// ------------------------------------------------------------- install as an app
+let installPrompt: (Event & { prompt(): Promise<void> }) | null = null;
+const isInstalled = () =>
+  matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || (navigator as any).standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // we show our own button instead of the browser's mini bar
+  installPrompt = e as typeof installPrompt;
+  if (screen === 'home') renderHome(homeError);
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  if (screen === 'home') renderHome(homeError);
+});
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
+const installHtml = () =>
+  isInstalled() ? '' : installPrompt ? `<button id="install" class="installbtn">${t('pwa.install')}</button>`
+    : isIOS() ? `<p class="hint installhint">📲 ${t('pwa.ios')}</p>` : '';
+
 let screen: 'home' | 'connecting' | 'waiting' | 'game' = 'home';
 let homeError = '';
 const langBtn = () => `<button class="langbtn" id="lang">${t('hud.switchLang')}</button>`;
@@ -42,6 +63,7 @@ function renderHome(error = '') {
       <div class="panel">
         ${langBtn()}
         <h1>⬢ Hexhold</h1>
+        ${installHtml()}
         <p class="tag">${t('lobby.tag', { n: WIN_POINTS })}</p>
         <label>${t('lobby.name')}<input id="name" maxlength="16" placeholder="${t('lobby.namePh')}" value="${esc(store.get('hexhold-name'))}"></label>
         ${error ? `<div class="err">${tr(error, true)}</div>` : ''}
@@ -61,6 +83,12 @@ function renderHome(error = '') {
       </div>
     </div>`;
   bindLang();
+  app.querySelector('#install')?.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    installPrompt = null;
+    renderHome(homeError);
+  });
   const nameEl = app.querySelector<HTMLInputElement>('#name')!;
   nameEl.addEventListener('input', () => store.set('hexhold-name', nameEl.value.trim()));
   const codeEl = app.querySelector<HTMLInputElement>('#code')!;
@@ -149,6 +177,37 @@ function onState(s: GameState) {
     voice.onChange = () => hud!.render();
     hud.voice = voice;
     if (session.seat < 0) setTimeout(() => hud?.toast(t('spec.joined')), 600);
+
+    // reactions: thrown at a player panel or onto the island
+    hud.onReact = (r) => {
+      session!.react(r);
+      showReaction(session!.seat, r);
+    };
+    hud.onAimChange = () => {
+      board!.aiming = !!hud!.aim;
+      hud!.render();
+    };
+    board.onAim = (pt) => hud!.aimed(pt);
+
+    // presence: what I'm doing, and where I point on the board during my turn
+    hud.onPresence = (focus) => session!.presence({ focus, pt: null });
+    let lastSent = 0, pending: ReturnType<typeof setTimeout> | null = null, pointing = false;
+    board.onHover = (pt) => {
+      const show = hud!.isMyTurn() ? pt : null;
+      if (!show && !pointing) return;
+      pointing = !!show;
+      const send = () => {
+        lastSent = Date.now();
+        pending = null;
+        session!.presence({ focus: hud!.focus(), pt: show });
+      };
+      if (pending) clearTimeout(pending);
+      const wait = 180 - (Date.now() - lastSent);
+      if (wait <= 0) send();
+      else pending = setTimeout(send, wait);
+    };
+    window.addEventListener('focusin', () => hud?.syncPresence());
+    window.addEventListener('focusout', () => setTimeout(() => hud?.syncPresence(), 0));
   }
   hud.chat?.update(s);
   s0 = s;
@@ -159,6 +218,12 @@ let s0: GameState | null = null;
 // handy for debugging from the browser console
 (window as any).hexhold = { get state() { return s0; }, get session() { return session; }, get hud() { return hud; }, get board() { return board; } };
 
+function showReaction(from: number, r: Reaction) {
+  if (!hud || !board) return;
+  if ('p' in r.to) hud.reactAtPlayer(from, r.to.p, r.e);
+  else board.social.throwEmoji(r.e, r.to.x, r.to.z);
+}
+
 const events: SessionEvents = {
   onLobby: (l) => {
     lastLobby = l;
@@ -166,6 +231,13 @@ const events: SessionEvents = {
   },
   onState,
   onError: (msg) => (hud ? hud.toast(tr(msg)) : alert(tr(msg))),
+  onReact: (from, r) => showReaction(from, r),
+  onPresence: (from, pr) => {
+    if (!hud || !board || !s0) return;
+    hud.setPresence(from, pr.focus);
+    const p = s0.players[from];
+    if (p) board.social.setPointer(from, p.color, pr.pt ?? null);
+  },
   onVoice: (from, name, chunk) => {
     if (!hud?.voice) return;
     void hud.voice.receive(from, chunk).then(() => hud?.speaking(from, name));
