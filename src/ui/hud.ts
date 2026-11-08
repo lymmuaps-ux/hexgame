@@ -9,6 +9,7 @@ import {
 import { Selectable } from '../render/scene';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
+import type { Voice } from './voice';
 
 type Mode = null | 'road' | 'settlement' | 'city';
 type Modal =
@@ -41,6 +42,10 @@ export class Hud {
     return innerWidth <= 760;
   })();
   chat: Chat | null = null;
+  voice: Voice | null = null;
+  /** names of whoever sent voice, by seat (spectators have negative seats) */
+  private talkerNames = new Map<number, string>();
+  private talkTimer = 0;
   // last rendered values, to animate what changed
   private prev: { hand: Record<string, string>; vp: Record<string, number>; cards: Record<string, string>; ready: Set<string>; log: number; status: string; dice: string; modal: string } | null = null;
   private toastTimer = 0;
@@ -400,6 +405,8 @@ export class Hud {
     if (!prev) {
       // first time the game screen appears: panels slide in
       q('#top, #players, #log, #bottom').forEach((el) => el.classList.add('intro'));
+      // never leave a panel stuck mid-animation (e.g. if the tab was in the background)
+      setTimeout(() => this.root.querySelectorAll('.intro').forEach((el) => el.classList.remove('intro')), 1500);
       return;
     }
     for (const c of q('.hand .card')) {
@@ -433,6 +440,30 @@ export class Hud {
     if (now.status !== prev.status) pulse(this.root.querySelector('.status'), 'swap');
     if (now.dice && now.dice !== prev.dice) pulse(this.root.querySelector('.dice'), 'pop');
     if (now.modal && now.modal !== prev.modal) this.root.querySelector('.modal-bg')?.classList.add('enter');
+  }
+
+  private voiceButtons(s: GameState) {
+    const watching = s.spectators?.length ?? 0;
+    const eye = watching ? `<span class="watchers" title="${esc(s.spectators!.join(', '))}">👁 ${watching}</span>` : '';
+    if (!this.voice) return eye;
+    const live = this.voice.live;
+    return `<button data-a="mic" class="mic ${live ? 'live' : ''}" title="${t(live ? 'voice.live' : 'voice.mic')}">${live ? '🎙️' : '🎤'}</button>`
+      + `<button data-a="listen" class="listen ${this.voice.listen ? '' : 'off'}" title="${t(this.voice.listen ? 'voice.listenOn' : 'voice.listenOff')}">${this.voice.listen ? '🔊' : '🔇'}</button>${eye}`;
+  }
+
+  private talkersHtml() {
+    if (!this.voice) return '';
+    const names = [...this.talkerNames].filter(([id]) => this.voice!.isSpeaking(id)).map(([, n]) => esc(n));
+    if (this.voice.live) names.unshift(t('hud.you'));
+    return names.length ? `<div class="talkers"><span class="wave"><i></i><i></i><i></i></span>${t('voice.talking', { names: names.join(', ') })}</div>` : '';
+  }
+
+  /** someone's voice arrived: show it now, and clear the indicator shortly after it stops */
+  speaking(from: number, name: string) {
+    this.talkerNames.set(from, name);
+    this.render();
+    clearTimeout(this.talkTimer);
+    this.talkTimer = window.setTimeout(() => this.render(), 1500);
   }
 
   private awardsHtml(s: GameState) {
@@ -562,6 +593,13 @@ export class Hud {
       case 'help': this.modal = { kind: 'help' }; break;
       case 'log': this.logOpen = !this.logOpen; break;
       case 'chat': this.chat?.toggle(); break;
+      case 'mic':
+        this.voice?.toggleMic().then((err) => {
+          if (err) this.toast(t(`voice.${err}`));
+          this.render();
+        });
+        break;
+      case 'listen': this.voice?.setListen(!this.voice.listen); break;
       case 'side':
         this.sideMini = !this.sideMini;
         try { localStorage.setItem('hexhold-side', this.sideMini ? 'mini' : 'full'); } catch { /* ignore */ }
@@ -611,7 +649,9 @@ export class Hud {
   render() {
     const s = this.state;
     if (!s) return;
-    const me = s.players[this.seat];
+    const spectator = !s.players[this.seat];
+    // spectators have no hand: use an empty stand-in so the shared code below stays simple
+    const me = s.players[this.seat] ?? { ...s.players[0], hand: emptyRes(), dev: [], newDev: [], roadsLeft: 0, settlementsLeft: 0, citiesLeft: 0 };
     const mine = s.current === this.seat && s.phase === 'main';
     const actions = mine && s.stage === 'actions';
 
@@ -621,7 +661,8 @@ export class Hud {
         s.longestRoad.owner === i ? `<span class="badge" title="${t('hud.longestRoad')}">🛣️ ${s.longestRoad.length}</span>` : '',
         s.strongestGuard.owner === i ? `<span class="badge" title="${t('hud.strongestGuard')}">⚔️ ${s.strongestGuard.size}</span>` : '',
       ].join('');
-      return `<div class="player ${i === s.current ? 'active' : ''}" data-p="${i}" style="--pc:${p.color}">
+      const talking = this.voice && (i === this.seat ? this.voice.live : this.voice.isSpeaking(i));
+      return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}" data-p="${i}" style="--pc:${p.color}">
         <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
@@ -693,19 +734,28 @@ export class Hud {
 
     const log = s.log.slice(-60).map((l) => `<div>${tr(l, true)}</div>`).join('');
 
+    let handHtml = `${hand}${devs ? `<div class="devs">${devs}</div>` : ''}`;
+    let controlsHtml = controls;
+    if (spectator) {
+      handHtml = `<div class="spectating">${t('spec.watching')}</div>`;
+      controlsHtml = '';
+      // spectators see offers but can't answer them
+      offer = offer.replace(/<button[^>]*data-a="(accept|decline)"[^>]*>[\s\S]*?<\/button>/g, '');
+    }
     this.root.innerHTML = `
       <div id="top">
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button></div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
+      ${this.talkersHtml()}
       <div id="players" class="${this.sideMini ? 'mini' : ''}"><button class="sidetoggle" data-a="side" title="${t(this.sideMini ? 'side.show' : 'side.hide')}">${this.sideMini ? '👥 <span class="arr">›</span>' : '<span class="arr">‹</span>'}</button>${players}${s.phase === 'setup' ? '' : this.awardsHtml(s)}</div>
       <div id="log" class="${this.logOpen ? 'open' : ''}"><h4>${t('hud.log')}</h4><div class="lines">${log}</div></div>
       ${offer}
       <div id="bottom">
-        <div class="hand">${hand}${devs ? `<div class="devs">${devs}</div>` : ''}</div>
-        <div class="controls">${controls}</div>
+        <div class="hand">${handHtml}</div>
+        <div class="controls">${controlsHtml}</div>
       </div>
       ${this.modalHtml(s)}
 `;

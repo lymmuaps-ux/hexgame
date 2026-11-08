@@ -7,11 +7,20 @@ export interface LobbyInfo {
   code: string;
   players: { name: string; connected: boolean }[];
   started: boolean;
+  spectators?: string[];
 }
 
-type ClientMsg = { t: 'join'; name: string; clientId: string } | { t: 'action'; action: Action } | { t: 'chat'; text: string };
+/** a short piece of recorded speech (base64 audio + its mime type) */
+export interface VoiceChunk { d: string; m: string }
+
+type ClientMsg =
+  | { t: 'join'; name: string; clientId: string }
+  | { t: 'action'; action: Action }
+  | { t: 'chat'; text: string }
+  | { t: 'voice'; chunk: VoiceChunk };
 type HostMsg =
   | { t: 'welcome'; seat: number }
+  | { t: 'voice'; from: number; name: string; chunk: VoiceChunk }
   | { t: 'reject'; msg: string }
   | { t: 'lobby'; lobby: LobbyInfo }
   | { t: 'state'; state: GameState; v: number }
@@ -22,15 +31,18 @@ export interface SessionEvents {
   onState(s: GameState): void;
   onError(msg: string): void;
   onDisconnect(): void;
+  onVoice?(from: number, name: string, chunk: VoiceChunk): void;
 }
 
 /** What the UI talks to; identical API for host and clients. */
 export interface Session {
   readonly isHost: boolean;
   readonly code: string;
+  /** player index; negative for spectators */
   seat: number;
   act(a: Action): void;
   chat(text: string): void;
+  voice(chunk: VoiceChunk): void;
   start?(): void;
 }
 
@@ -76,11 +88,14 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     ? resume.seats.map((s, i) => ({ ...s, link: null, clientId: i === 0 ? clientId() : s.clientId }))
     : [{ name, clientId: clientId(), link: null }];
   let state: GameState | null = resume?.state ?? null;
+  // people watching: they get every update but cannot act (ids -1, -2, …)
+  const spectators: { id: number; name: string; clientId: string; link: Link | null }[] = [];
 
   const lobby = (): LobbyInfo => ({
     code,
     players: seats.map((s, i) => ({ name: s.name, connected: i === 0 || !!s.link })),
     started: !!state,
+    spectators: spectators.filter((x) => x.link).map((x) => x.name),
   });
   const save = () => {
     try {
@@ -88,9 +103,15 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     } catch { /* storage unavailable */ }
   };
   let version = 0;
-  const broadcast = (m: HostMsg) => seats.forEach((s) => s.link?.send(m));
+  const broadcast = (m: HostMsg, except?: Link) => {
+    seats.forEach((s) => s.link && s.link !== except && s.link.send(m));
+    spectators.forEach((s) => s.link && s.link !== except && s.link.send(m));
+  };
   const publish = () => {
-    if (state) state.players.forEach((p, i) => (p.connected = i === 0 || !!seats[i]?.link));
+    if (state) {
+      state.players.forEach((p, i) => (p.connected = i === 0 || !!seats[i]?.link));
+      state.spectators = spectators.filter((x) => x.link).map((x) => x.name);
+    }
     save();
     const l = lobby();
     broadcast({ t: 'lobby', lobby: l });
@@ -104,8 +125,17 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!state || !text) return;
     const list = state.chat ?? [];
-    state.chat = [...list, { id: (list[list.length - 1]?.id ?? 0) + 1, p: seat, text }].slice(-80);
+    const name = seat >= 0 ? undefined : spectators.find((x) => x.id === seat)?.name;
+    state.chat = [...list, { id: (list[list.length - 1]?.id ?? 0) + 1, p: seat, text, ...(name ? { name } : {}) }].slice(-80);
     publish();
+  };
+  const nameOf = (seat: number) => (seat >= 0 ? seats[seat]?.name : spectators.find((x) => x.id === seat)?.name) ?? '?';
+  /** voice is relayed to everyone except the speaker; it is never stored */
+  const voice = (seat: number, chunk: VoiceChunk, from?: Link) => {
+    if (!chunk || typeof chunk.d !== 'string' || chunk.d.length > 60000) return;
+    const msg: HostMsg = { t: 'voice', from: seat, name: nameOf(seat), chunk: { d: chunk.d, m: String(chunk.m).slice(0, 60) } };
+    broadcast(msg, from);
+    if (seat !== 0) ev.onVoice?.(seat, nameOf(seat), msg.chunk);
   };
   const handle = (seat: number, a: Action, reply: (m: HostMsg) => void) => {
     if (!state) return reply({ t: 'error', msg: M('net.notStarted') });
@@ -116,15 +146,27 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
   };
 
   await getTransport().host(code, (link) => {
-    let seat = -1;
+    let seat: number | null = null; // not joined yet
     link.onMessage((m: ClientMsg) => {
       if (m.t === 'join') {
         const nm = String(m.name).trim().slice(0, 16) || 'Player';
         let idx = seats.findIndex((s, i) => i > 0 && s.clientId === m.clientId);
         if (idx < 0) idx = seats.findIndex((s, i) => i > 0 && !s.link && s.name.toLowerCase() === nm.toLowerCase());
+        if (idx < 0 && (state || seats.length >= MAX_PLAYERS)) {
+          // game already running (or full): join as a spectator
+          let sp = spectators.find((x) => x.clientId === m.clientId);
+          if (!sp) {
+            sp = { id: -(spectators.length + 1), name: nm, clientId: m.clientId, link };
+            spectators.push(sp);
+          }
+          sp.link = link;
+          sp.name = nm;
+          seat = sp.id;
+          link.send({ t: 'welcome', seat } satisfies HostMsg);
+          publish();
+          return;
+        }
         if (idx < 0) {
-          if (state) return link.send({ t: 'reject', msg: M('net.started') } satisfies HostMsg);
-          if (seats.length >= MAX_PLAYERS) return link.send({ t: 'reject', msg: M('net.full') } satisfies HostMsg);
           if (seats.some((s) => s.name.toLowerCase() === nm.toLowerCase()))
             return link.send({ t: 'reject', msg: M('net.nameTaken') } satisfies HostMsg);
           seats.push({ name: nm, clientId: m.clientId, link });
@@ -136,13 +178,24 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
         seat = idx;
         link.send({ t: 'welcome', seat } satisfies HostMsg);
         publish();
+      } else if (seat === null) {
+        return;
       } else if (m.t === 'action' && seat >= 0) {
         handle(seat, m.action, (r) => link.send(r));
-      } else if (m.t === 'chat' && seat >= 0) {
+      } else if (m.t === 'chat') {
         chat(seat, m.text);
+      } else if (m.t === 'voice') {
+        voice(seat, m.chunk, link);
       }
     });
     link.onClose(() => {
+      if (seat === null) return;
+      const sp = spectators.find((x) => x.id === seat);
+      if (sp) {
+        if (sp.link === link) sp.link = null;
+        publish();
+        return;
+      }
       if (seat < 0 || seats[seat]?.link !== link) return;
       if (!state) seats.splice(seat, 1); // left the lobby
       else seats[seat].link = null;
@@ -156,6 +209,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     seat: 0,
     act: (a) => handle(0, a, (m) => m.t === 'error' && ev.onError(m.msg)),
     chat: (text) => chat(0, text),
+    voice: (chunk) => voice(0, chunk),
     start: () => {
       if (state) return;
       if (seats.length < 2) return ev.onError(M('net.need2'));
@@ -180,6 +234,7 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
       seat: -1,
       act: (a) => link.send({ t: 'action', action: a } satisfies ClientMsg),
       chat: (text) => link.send({ t: 'chat', text } satisfies ClientMsg),
+      voice: (chunk) => link.send({ t: 'voice', chunk } satisfies ClientMsg),
     };
     link.onMessage((m: HostMsg) => {
       switch (m.t) {
@@ -194,6 +249,7 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
           }
           break;
         case 'error': ev.onError(m.msg); break;
+        case 'voice': ev.onVoice?.(m.from, m.name, m.chunk); break;
       }
     });
     link.onClose(() => ev.onDisconnect());

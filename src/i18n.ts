@@ -5,6 +5,13 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'voice.mic': 'Microphone is off – tap to talk', 'voice.live': 'You are live – tap to mute',
+  'voice.denied': 'Microphone access was blocked. Allow it in your browser settings to talk.',
+  'voice.unsupported': 'Voice chat is not supported in this browser.',
+  'voice.listenOn': 'Voice on – tap to silence others', 'voice.listenOff': 'Others are silenced – tap to hear them',
+  'voice.talking': '{names} talking…',
+  'spec.watching': '👁 You are watching this game', 'spec.joined': 'The game has already started – you joined as a spectator.',
+  'spec.tag': 'spectator',
   'chat.title': 'Chat', 'chat.placeholder': 'Say something…', 'chat.send': 'Send',
   'chat.empty': 'No messages yet. Say hi! 👋', 'hud.chat': 'Chat',
   'side.hide': 'Hide panels', 'side.show': 'Show players & awards',
@@ -150,6 +157,13 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'voice.mic': 'الميكروفون مغلق – انقر للتحدث', 'voice.live': 'أنت تتحدث الآن – انقر لكتم الصوت',
+  'voice.denied': 'تم حظر الوصول إلى الميكروفون. اسمح به من إعدادات المتصفح للتحدث.',
+  'voice.unsupported': 'المحادثة الصوتية غير مدعومة في هذا المتصفح.',
+  'voice.listenOn': 'الصوت مفعّل – انقر لكتم الآخرين', 'voice.listenOff': 'الآخرون مكتومون – انقر لسماعهم',
+  'voice.talking': '{names} يتحدث…',
+  'spec.watching': '👁 أنت تشاهد هذه اللعبة', 'spec.joined': 'بدأت اللعبة بالفعل – انضممت كمشاهد.',
+  'spec.tag': 'مشاهد',
   'chat.title': 'الدردشة', 'chat.placeholder': 'اكتب شيئًا…', 'chat.send': 'إرسال',
   'chat.empty': 'لا توجد رسائل بعد. قل مرحبًا! 👋', 'hud.chat': 'الدردشة',
   'side.hide': 'إخفاء اللوحات', 'side.show': 'إظهار اللاعبين والجوائز',

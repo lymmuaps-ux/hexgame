@@ -15,6 +15,15 @@ It runs entirely in the browser, so you don't need a backend.
 - URL options: `?p2p` uses direct peer-to-peer (WebRTC) instead, `?tabs` plays across tabs of one browser
   with no network, and `?broker=wss://your-server/mqtt` (repeatable) uses your own MQTT servers.
 
+## Spectators & voice chat
+- Anyone who joins with the room code after the game has started (or when 4 players are already in)
+  becomes a **spectator**: they see the live board, log, animations and chat, can chat, but can't act.
+  A player who drops out and rejoins with the same name gets their seat back.
+- **Voice chat** is off by default. Tap 🎤 to go live, tap again to mute; 🔊/🔇 silences everyone else.
+  Speech is sent in short pieces through the same relay as the game (no extra servers, works where the
+  game works), so expect about a second of delay — like a walkie-talkie. The browser asks for microphone
+  permission the first time.
+
 ## Languages
 English and Arabic (with a full right-to-left layout). Each player picks their own language with the
 button in the lobby or the top bar; it's remembered per browser and defaults to Arabic on Arabic devices.
@@ -53,6 +62,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/render/island.ts` | beach, shallows, surf, palms, lighthouse, boats, seagulls |
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
+| `src/ui/voice.ts` | walkie-talkie voice chat over the relay |
 | `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |
 | `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |

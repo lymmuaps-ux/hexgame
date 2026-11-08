@@ -4,6 +4,7 @@ import { LobbyInfo, Session, SessionEvents, clearSavedHost, hostGame, joinGame, 
 import { BoardView } from './render/scene';
 import { Hud } from './ui/hud';
 import { Chat } from './ui/chat';
+import { Voice } from './ui/voice';
 import { M } from './game/msg';
 import { WIN_POINTS } from './game/types';
 import { applyDir, getLang, onLangChange, setLang, t, tr } from './i18n';
@@ -144,6 +145,10 @@ function onState(s: GameState) {
       (p) => document.querySelector(`.player[data-p="${p}"]`)?.getBoundingClientRect() ?? null);
     chat.onUnreadChange = () => hud!.render();
     hud.chat = chat;
+    const voice = new Voice((c) => session!.voice(c));
+    voice.onChange = () => hud!.render();
+    hud.voice = voice;
+    if (session.seat < 0) setTimeout(() => hud?.toast(t('spec.joined')), 600);
   }
   hud.chat?.update(s);
   s0 = s;
@@ -161,6 +166,10 @@ const events: SessionEvents = {
   },
   onState,
   onError: (msg) => (hud ? hud.toast(tr(msg)) : alert(tr(msg))),
+  onVoice: (from, name, chunk) => {
+    if (!hud?.voice) return;
+    void hud.voice.receive(from, chunk).then(() => hud?.speaking(from, name));
+  },
   onDisconnect: () => {
     if (hud) hud.toast(t('lobby.lostGame'));
     else renderHome(M('lobby.lost'));

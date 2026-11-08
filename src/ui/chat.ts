@@ -85,8 +85,8 @@ export class Chat {
       const p = s.players[m.p];
       const row = document.createElement('div');
       row.className = `chat-msg${m.p === this.seat ? ' mine' : ''}${first ? '' : ' new'}${isEmojiOnly(m.text) ? ' emoji' : ''}`;
-      row.style.setProperty('--pc', p?.color ?? '#999');
-      row.innerHTML = `<span class="who"><span class="dot"></span>${esc(p?.name ?? '?')}</span><span class="txt" dir="auto">${esc(m.text)}</span>`;
+      row.style.setProperty('--pc', p?.color ?? '#9aa0aa');
+      row.innerHTML = `<span class="who"><span class="dot"></span>${esc(p?.name ?? (m.name ? `${m.name} 👁` : '?'))}</span><span class="txt" dir="auto">${esc(m.text)}</span>`;
       this.list.appendChild(row);
       if (first) continue;
       if (isEmojiOnly(m.text)) this.floatEmoji(m.p, m.text);
@@ -94,7 +94,7 @@ export class Chat {
         if (!this.open) {
           this.unread++;
           this.onUnreadChange();
-          this.notify(p?.name ?? '?', m.text, p?.color ?? '#999');
+          this.notify(p?.name ?? (m.name ? `${m.name} 👁` : '?'), m.text, p?.color ?? '#9aa0aa');
         }
       }
     }

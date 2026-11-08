@@ -118,7 +118,9 @@ export interface GameState {
   production?: { id: number; items: ProductionItem[] };
   fx?: { id: number; list: FxEvent[] };
   /** in-game chat (added by the host outside the rules) */
-  chat?: { id: number; p: number; text: string }[];
+  chat?: { id: number; p: number; text: string; name?: string }[];
+  /** names of people currently watching */
+  spectators?: string[];
   hexes: Hex[];
   ports: Port[];
   raider: number;
