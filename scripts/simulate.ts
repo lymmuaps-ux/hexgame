@@ -76,7 +76,19 @@ for (let g = 0; g < GAMES; g++) {
       if (s.players.some((pl) => pl.hand[res] < 0) || s.bank[res] < 0) throw new Error('negative');
     }
   }
-  if (s.phase === 'ended') { wins++; totalTurns += s.turnNumber; }
+  if (s.phase === 'ended') {
+    wins++;
+    totalTurns += s.turnNumber;
+    const st = s.stats!;
+    const rolled = st.rolls.reduce((a, b) => a + b, 0);
+    const rollLines = s.log.filter((l) => l.startsWith('@log.rolls')).length;
+    if (rolled !== rollLines && s.log.length < 200) throw new Error(`roll stats ${rolled} != ${rollLines}`);
+    if (st.vp.length < 2 || !st.endedAt) throw new Error('missing vp history');
+    s.players.forEach((pl, i) => {
+      const built = Object.values(s.buildings).filter((b) => b.owner === i && b.kind === 'settlement').length;
+      if (st.players[i].settlements - st.players[i].cities !== built) throw new Error('settlement stats');
+    });
+  }
   void totalRes;
 }
 console.log(`${wins}/${GAMES} games finished, avg ${Math.round(totalTurns / wins)} turns`);

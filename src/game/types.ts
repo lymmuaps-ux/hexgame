@@ -97,6 +97,33 @@ export type FxEvent =
   | { t: 'buyDev'; p: number }
   | { t: 'playDev'; p: number; card: DevCard };
 
+export interface PlayerStats {
+  /** resources received from dice rolls (and the second setup settlement) */
+  produced: ResMap;
+  /** production a player would have received but the Raider blocked */
+  blocked: number;
+  stolen: number;
+  robbed: number;
+  discarded: number;
+  trades: number;
+  bankTrades: number;
+  bought: number;
+  knights: number;
+  roads: number;
+  settlements: number;
+  cities: number;
+}
+
+export interface GameStats {
+  /** how often each dice total came up, index 2..12 */
+  rolls: number[];
+  /** points (including hidden monuments) of every player at the end of each turn */
+  vp: number[][];
+  players: PlayerStats[];
+  startedAt: number;
+  endedAt?: number;
+}
+
 export interface GameState {
   phase: 'setup' | 'main' | 'ended';
   players: Player[];
@@ -119,6 +146,8 @@ export interface GameState {
   /** the latest batch of resources handed out (by a roll or a setup settlement), for animation */
   production?: { id: number; items: ProductionItem[] };
   fx?: { id: number; list: FxEvent[] };
+  /** numbers collected for the post-game recap */
+  stats?: GameStats;
   /** in-game chat (added by the host outside the rules) */
   chat?: { id: number; p: number; text: string; name?: string }[];
   /** names of people currently watching */

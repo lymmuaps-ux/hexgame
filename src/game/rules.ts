@@ -1,7 +1,7 @@
 import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import { M } from './msg';
 import {
-  Action, COSTS, FxEvent, GameState, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  Action, COSTS, FxEvent, GameState, GameStats, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, WIN_POINTS, emptyRes, totalRes,
 } from './types';
 
@@ -149,6 +149,19 @@ function pay(s: GameState, p: number, cost: Partial<ResMap>) {
   }
 }
 
+/** the recap statistics (created on demand, so games saved before this feature keep working) */
+function stats(s: GameState): GameStats {
+  return (s.stats ??= {
+    rolls: Array(13).fill(0),
+    vp: [],
+    startedAt: Date.now(),
+    players: s.players.map(() => ({
+      produced: emptyRes(), blocked: 0, stolen: 0, robbed: 0, discarded: 0, trades: 0, bankTrades: 0,
+      bought: 0, knights: 0, roads: 0, settlements: 0, cities: 0,
+    })),
+  });
+}
+
 function fx(s: GameState, e: FxEvent) {
   (s.fx ??= { id: 1, list: [] }).list.push(e);
 }
@@ -180,6 +193,9 @@ function checkWin(s: GameState) {
   if (victoryPoints(s, p) >= WIN_POINTS) {
     s.phase = 'ended';
     s.winner = p;
+    const st = stats(s);
+    st.endedAt = Date.now();
+    st.vp.push(s.players.map((_, i) => victoryPoints(s, i)));
     log(s, M('log.win', { name: s.players[p].name, n: victoryPoints(s, p) }));
   }
 }
@@ -197,6 +213,13 @@ function produce(s: GameState, roll: number) {
       items.push({ p: b.owner, hex: h.id, r: h.type, n });
     }
   });
+  // what the Raider took away this roll
+  const rh = s.hexes[s.raider];
+  if (rh && rh.number === roll && rh.type !== 'desert')
+    for (const v of GEO.hexVertices[rh.id]) {
+      const b = s.buildings[v];
+      if (b) stats(s).players[b.owner].blocked += b.kind === 'city' ? 2 : 1;
+    }
   for (const r of RESOURCES) {
     const demand = gains.reduce((t, g) => t + g[r], 0);
     const takers = gains.filter((g) => g[r] > 0).length;
@@ -222,6 +245,7 @@ function produce(s: GameState, roll: number) {
     RESOURCES.forEach((r) => {
       s.players[i].hand[r] += g[r];
       s.bank[r] -= g[r];
+      stats(s).players[i].produced[r] += g[r];
     });
     log(s, M('log.receives', { name: s.players[i].name, cards: fmtRes(g) }));
   });
@@ -241,6 +265,7 @@ function nextSetup(s: GameState) {
     s.current = 0;
     s.stage = 'roll';
     s.turnNumber = 1;
+    stats(s).vp.push(s.players.map((_, i) => victoryPoints(s, i)));
     log(s, M('log.setupDone', { name: s.players[0].name }));
   } else s.current = s.setupOrder[s.setupIndex];
 }
@@ -277,6 +302,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     delete s.pendingDiscards[p];
     log(s, M('log.discards', { name: me.name, n: need }));
     fx(s, { t: 'discard', p, n: need });
+    stats(s).players[p].discarded += need;
     if (Object.keys(s.pendingDiscards).length === 0) s.stage = 'moveRaider';
     return;
   }
@@ -297,6 +323,8 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       me.hand[r] += g - w;
     }
     fx(s, { t: 'trade', a: t.from, b: p, give: t.give, get: t.get });
+    stats(s).players[t.from].trades++;
+    stats(s).players[p].trades++;
     log(s, M('log.traded', { a: from.name, b: me.name, give: fmtRes(t.give), get: fmtRes(t.get) }));
     s.trade = null;
     return;
@@ -330,6 +358,8 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       other.hand[r] += g - w;
     }
     fx(s, { t: 'trade', a: p, b: c.p, give: c.get, get: c.give });
+    stats(s).players[p].trades++;
+    stats(s).players[c.p].trades++;
     log(s, M('log.traded', { a: me.name, b: other.name, give: fmtRes(c.get), get: fmtRes(c.give) }));
     s.trade = null;
     return;
@@ -342,6 +372,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     if (a.type === 'buildSettlement' && s.setupNeed === 'settlement') {
       if (!validSettlementSpots(s, p).includes(a.vertex)) return M('err.cantSettle');
       s.buildings[a.vertex] = { owner: p, kind: 'settlement' };
+      stats(s).players[p].settlements++;
       me.settlementsLeft--;
       s.lastSetupVertex = a.vertex;
       s.setupNeed = 'road';
@@ -353,6 +384,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
           if (t === 'desert') continue;
           g[t]++;
           items.push({ p, hex: h, r: t, n: 1 });
+          stats(s).players[p].produced[t]++;
         }
         s.production = { id: (s.production?.id ?? 0) + 1, items };
         RESOURCES.forEach((r) => { me.hand[r] += g[r]; s.bank[r] -= g[r]; });
@@ -363,6 +395,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     if (a.type === 'buildRoad' && s.setupNeed === 'road') {
       if (!validRoadSpots(s, p).includes(a.edge)) return M('err.setupRoad');
       s.roads[a.edge] = p;
+      stats(s).players[p].roads++;
       me.roadsLeft--;
       nextSetup(s);
       return;
@@ -376,6 +409,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (s.stage !== 'roll') return M('err.rolled');
       const d: [number, number] = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
       s.dice = d;
+      stats(s).rolls[d[0] + d[1]]++;
       s.rollId = (s.rollId ?? 0) + 1;
       s.rolledBy = p;
       const sum = d[0] + d[1];
@@ -426,6 +460,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (!validRoadSpots(s, p).includes(a.edge)) return M('err.cantRoad');
       if (!free) pay(s, p, COSTS.road);
       s.roads[a.edge] = p;
+      stats(s).players[p].roads++;
       me.roadsLeft--;
       if (free) {
         s.roadworksLeft--;
@@ -442,6 +477,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (!validSettlementSpots(s, p).includes(a.vertex)) return M('err.cantSettle');
       pay(s, p, COSTS.settlement);
       s.buildings[a.vertex] = { owner: p, kind: 'settlement' };
+      stats(s).players[p].settlements++;
       me.settlementsLeft--;
       log(s, M('log.buildSettlement', { name: me.name }));
       updateLongestRoad(s); // may break an opponent's road
@@ -455,6 +491,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (!validCitySpots(s, p).includes(a.vertex)) return M('err.upgradeOwn');
       pay(s, p, COSTS.city);
       s.buildings[a.vertex] = { owner: p, kind: 'city' };
+      stats(s).players[p].cities++;
       me.citiesLeft--;
       me.settlementsLeft++;
       log(s, M('log.buildCity', { name: me.name }));
@@ -469,6 +506,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       me.newDev.push(s.devDeck.pop()!);
       log(s, M('log.buyDev', { name: me.name }));
       fx(s, { t: 'buyDev', p });
+      stats(s).players[p].bought++;
       checkWin(s);
       return;
     }
@@ -505,6 +543,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
         log(s, M('log.roadworks', { name: me.name }));
       } else if (a.card === 'guard') {
         me.guards++;
+        stats(s).players[p].knights++;
         log(s, M('log.guard', { name: me.name }));
         if (me.guards >= 3 && me.guards > s.strongestGuard.size) {
           if (s.strongestGuard.owner !== p) log(s, M('log.strongestGuard', { name: me.name }));
@@ -530,6 +569,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       me.hand[a.get]++;
       s.bank[a.get]--;
       fx(s, { t: 'bank', p, give: a.give, n: rate, get: a.get });
+      stats(s).players[p].bankTrades++;
       log(s, M('log.bankTrade', { name: me.name, n: rate, give: RES_INFO[a.give].icon, get: RES_INFO[a.get].icon }));
       return;
     }
@@ -556,6 +596,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.current = (s.current + 1) % s.players.length;
       s.stage = 'roll';
       s.turnNumber++;
+      stats(s).vp.push(s.players.map((_, i) => victoryPoints(s, i)));
       log(s, M('log.turn', { name: s.players[s.current].name }));
       return;
     }
@@ -573,4 +614,6 @@ function stealCard(s: GameState, p: number, target: number, rng: Rng) {
   s.players[p].hand[r]++;
   log(s, M('log.steal', { name: s.players[p].name, victim: victim.name }));
   fx(s, { t: 'steal', from: target, to: p });
+  stats(s).players[p].stolen++;
+  stats(s).players[target].robbed++;
 }

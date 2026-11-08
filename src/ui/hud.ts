@@ -9,6 +9,7 @@ import {
 import { Selectable } from '../render/scene';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
+import { bindRecapTips, recapHtml } from './recap';
 import type { Voice } from './voice';
 import type { Reaction } from '../net/session';
 
@@ -57,6 +58,7 @@ export class Hud {
   onAimChange: () => void = () => {};
   onPresence: (focus: string) => void = () => {};
   view: '3d' | '2d' = '3d';
+  private recapClosed = false;
   onViewChange: (v: '3d' | '2d') => void = () => {};
   /** names of whoever sent voice, by seat (spectators have negative seats) */
   private talkerNames = new Map<number, string>();
@@ -622,7 +624,12 @@ export class Hud {
       }
       case 'doDiscard': this.act({ type: 'discard', cards: { ...this.discard } }); break;
       case 'steal': this.act({ type: 'steal', target: Number(v) }); break;
-      case 'close': this.modal = null; break;
+      case 'close':
+        if (this.state?.phase === 'ended' && !this.recapClosed && !this.modal) this.recapClosed = true;
+        this.modal = null;
+        break;
+      case 'recap': this.recapClosed = false; break;
+      case 'newgame': location.href = location.pathname + (location.search.includes('tabs') ? '?tabs' : ''); return;
       case 'help': this.modal = { kind: 'help' }; break;
       case 'log': this.logOpen = !this.logOpen; break;
       case 'chat': this.chat?.toggle(); break;
@@ -876,12 +883,13 @@ export class Hud {
       // spectators see offers but can't answer them
       offer = offer.replace(/<button[^>]*data-a="(accept|decline|counter|acceptCounter)"[^>]*>[\s\S]*?<\/button>/g, '');
     }
+    const recapScroll = this.root.querySelector('.recap-modal')?.scrollTop ?? 0;
     this.root.innerHTML = `
       <div id="top">
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button><button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button>${s.phase === 'ended' ? `<button data-a="recap" title="${t('recap.open')}">📊</button>` : ''}<button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
       ${this.talkersHtml()}
       ${this.paletteOpen ? `<div class="palette">${REACTIONS.map((e) => `<button data-a="pickReact" data-v="${e}">${e}</button>`).join('')}</div>` : ''}
@@ -896,6 +904,11 @@ export class Hud {
 `;
     this.animateChanges(s);
     this.syncPresence();
+    const recapEl = this.root.querySelector<HTMLElement>('.recap-modal');
+    if (recapEl) {
+      recapEl.scrollTop = recapScroll;
+      bindRecapTips(recapEl.querySelector('.recap')!);
+    }
     const lines = this.root.querySelector('#log .lines');
     if (lines) lines.scrollTop = lines.scrollHeight;
   }
@@ -905,11 +918,8 @@ export class Hud {
     const wrap = (title: string, body: string, closable = true) =>
       `<div class="modal-bg"><div class="modal"><h3>${title}</h3>${body}${closable ? '<button class="close" data-a="close">✕</button>' : ''}</div></div>`;
 
-    if (s.phase === 'ended') {
-      const ranking = s.players.map((p, i) => ({ p, vp: victoryPoints(s, i) })).sort((a, b) => b.vp - a.vp);
-      return wrap(t('st.wins', { name: esc(s.players[s.winner!].name) }),
-        `<ol class="rank">${ranking.map((r) => `<li style="--pc:${r.p.color}"><span class="dot"></span>${t('m.pts', { name: esc(r.p.name), n: r.vp })}</li>`).join('')}</ol>
-         <p>${t('m.reload')}</p>`, false);
+    if (s.phase === 'ended' && !this.recapClosed) {
+      return `<div class="modal-bg"><div class="modal recap-modal">${recapHtml(s, this.seat)}<button class="close" data-a="close">✕</button></div></div>`;
     }
 
     const need = s.stage === 'discard' ? s.pendingDiscards[this.seat] : 0;

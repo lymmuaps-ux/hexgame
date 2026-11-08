@@ -32,6 +32,13 @@ It runs entirely in the browser, so you don't need a backend.
 - **Presence:** each panel shows what that player is doing (trading…, typing…, picking a road spot…), and
   everyone sees where the active player is pointing on the board.
 
+## Game recap
+When someone wins, a recap opens (reopen it any time with 📊): final standings with a points breakdown, every
+player's revealed hand and fortune cards, a dice chart (each total vs. how often it should come up, most
+rolled, sevens, never rolled), points over time, fun awards (luckiest, robber baron, most robbed, trade master,
+road builder, knight commander…) and a full stats table. The rules engine records these numbers as the game is
+played (`stats` in the game state).
+
 ## Two board views
 The 3D island is the default. The 🗺️ button in the top bar switches to a **classic flat board**: illustrated,
 printed-style tiles (our own artwork, painted in code) in a sea frame on a wooden table, seen from straight above.
@@ -83,6 +90,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/render/effects.ts` | particle bursts, animated ocean, clouds |
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
 | `src/ui/voice.ts` | walkie-talkie voice chat over the relay |
+| `src/ui/recap.ts` | post-game recap: standings, final hands, charts, awards, stats |
 | `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |
 | `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |
