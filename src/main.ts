@@ -5,6 +5,7 @@ import { BoardView } from './render/scene';
 import { Hud } from './ui/hud';
 import { Chat } from './ui/chat';
 import { Voice } from './ui/voice';
+import { sound } from './ui/sound';
 import { M } from './game/msg';
 import { WIN_POINTS } from './game/types';
 import { applyDir, getLang, onLangChange, setLang, t, tr } from './i18n';
@@ -188,6 +189,10 @@ function onState(s: GameState) {
       hud!.render();
     };
     board.onAim = (pt) => hud!.aimed(pt);
+    board.onBuilt = (kind) => sound.build(kind);
+    board.onRaiderLand = () => sound.raider();
+    board.social.onThrow = () => sound.whoosh();
+    board.social.onLand = (e) => sound.splat(e === '🍅');
 
     // 3D island (default) or the classic flat board, remembered per browser
     const savedView = store.get('hexhold-view') === '2d' ? '2d' : '3d';
@@ -195,6 +200,7 @@ function onState(s: GameState) {
     hud.onViewChange = (v) => {
       store.set('hexhold-view', v);
       board!.setView(v);
+      sound.setAmbience(v === '3d');
     };
 
     // presence: what I'm doing, and where I point on the board during my turn
@@ -222,6 +228,7 @@ function onState(s: GameState) {
   hud.setState(s);
   board!.update(s, hud.selectable());
   if (board!.view !== hud.view) board!.setView(hud.view);
+  sound.setAmbience(hud.view === '3d' && s.phase !== 'ended');
 }
 let s0: GameState | null = null;
 // handy for debugging from the browser console
@@ -239,7 +246,11 @@ const events: SessionEvents = {
     if (!l.started) renderWaiting(l);
   },
   onState,
-  onError: (msg) => (hud ? hud.toast(tr(msg)) : alert(tr(msg))),
+  onError: (msg) => {
+    sound.error();
+    if (hud) hud.toast(tr(msg));
+    else alert(tr(msg));
+  },
   onReact: (from, r) => showReaction(from, r),
   onPresence: (from, pr) => {
     if (!hud || !board || !s0) return;

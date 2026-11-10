@@ -621,3 +621,4 @@ table.stats tr.sum td, table.stats tr.sum th { font-weight: 800; color: var(--in
   .chart .value { font-size: 18px; }
   .chart .endlabel { font-size: 17px; }
 }
+.soundbtn.off { opacity: 0.6; }

@@ -10,6 +10,7 @@ import { Selectable } from '../render/scene';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
 import { bindRecapTips, recapHtml } from './recap';
+import { sound } from './sound';
 import type { Voice } from './voice';
 import type { Reaction } from '../net/session';
 
@@ -89,6 +90,7 @@ export class Hud {
     root.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-a]');
       if (!el || el.hasAttribute('disabled')) return;
+      sound.click();
       this.click(el.dataset.a!, el.dataset.v ?? '');
     });
   }
@@ -98,6 +100,7 @@ export class Hud {
     else if (s.rollId !== this.seenRoll && s.dice) {
       this.seenRoll = s.rollId;
       this.rolling = s;
+      sound.diceRoll();
       // fallback in case the board can't report the landing (e.g. the tab is hidden)
       clearTimeout(this.rollTimer);
       this.rollTimer = window.setTimeout(() => this.diceLanded(), 2600);
@@ -129,6 +132,8 @@ export class Hud {
       if (this.seenTurn !== null || prevPhase === 'setup') {
         const p = s.players[s.current];
         this.queueBanner(s.current === this.seat ? t('banner.yourTurn') : t('banner.turnOf', { name: esc(p.name) }), p.color);
+        if (s.current === this.seat) sound.yourTurn();
+        else sound.otherTurn();
       }
       this.seenTurn = turnKey;
     }
@@ -146,6 +151,7 @@ export class Hud {
     if (!s) return;
     clearTimeout(this.rollTimer);
     this.rolling = null;
+    if (s.dice) sound.diceLand(s.dice[0] + s.dice[1]);
     this.showRollPop(s);
     this.setState(s);
     this.onChange();
@@ -201,6 +207,7 @@ export class Hud {
       el.remove();
       const inc = this.incoming[f.p];
       if (inc && inc[f.r] > 0) inc[f.r]--;
+      sound.card(RESOURCES.indexOf(f.r));
       this.render();
       const t = this.root.querySelector<HTMLElement>(targetSel);
       if (t) {
@@ -310,25 +317,30 @@ export class Hud {
     for (const e of list) {
       switch (e.t) {
         case 'steal':
+          sound.steal();
           this.fly(back, this.centerOf(this.playerSel(e.from)), this.centerOf(this.playerSel(e.to)), {
             cls: 'back', done: () => this.bump(this.playerSel(e.to)),
           });
           break;
         case 'discard':
+          sound.discard();
           for (let i = 0; i < e.n; i++) this.fly(back, this.centerOf(this.playerSel(e.p)), centre, { cls: 'back', fade: true, delay: i * 90 });
           break;
         case 'buyDev':
+          sound.buyCard();
           this.fly('<span>🃏</span>', this.centerOf('[data-a="buyDev"]'), this.centerOf(this.playerSel(e.p)), {
             cls: 'dev', done: () => this.bump(this.playerSel(e.p)),
           });
           break;
         case 'bank': {
+          sound.trade();
           const from = this.centerOf(this.playerSel(e.p));
           for (let i = 0; i < e.n; i++) this.fly(chip(e.give), from, centre, { color: RES_INFO[e.give].color, fade: true, delay: i * 110 });
           this.fly(chip(e.get), centre, from, { color: RES_INFO[e.get].color, delay: e.n * 110 + 350, done: () => this.bump(this.playerSel(e.p)) });
           break;
         }
         case 'trade': {
+          sound.trade();
           const a = this.centerOf(this.playerSel(e.a)), b = this.centerOf(this.playerSel(e.b));
           let i = 0;
           for (const r of RESOURCES) for (let k = 0; k < (e.give[r] ?? 0); k++) this.fly(chip(r), a, b, { color: RES_INFO[r].color, delay: i++ * 120 });
@@ -337,6 +349,7 @@ export class Hud {
           break;
         }
         case 'playDev': {
+          sound.playCard();
           const p = s.players[e.p];
           this.queueBanner(`${DEV_INFO[e.card].icon} ${t('banner.play', { name: esc(p.name), card: t(`dev.${e.card}`) })}`, p.color);
           break;
@@ -346,6 +359,7 @@ export class Hud {
           const shelf = `.award[data-award="${e.award}"]`;
           const icon = e.award === 'road' ? '🛣️' : '⚔️';
           if (e.to !== null) {
+            sound.award();
             const p = s.players[e.to];
             this.queueBanner(`${icon} ${t('banner.award', { name: esc(p.name), award: name })}`, p.color);
             this.fly(`<span>${icon}</span>`, this.centerOf(e.from !== null ? this.playerSel(e.from) : shelf), this.centerOf(this.playerSel(e.to)), {
@@ -384,6 +398,7 @@ export class Hud {
   }
 
   private confetti() {
+    sound.win();
     const colors = ['#e53935', '#1e88e5', '#fdd835', '#43a047', '#fb8c00', '#8e24aa', '#ffffff'];
     for (let i = 0; i < 160; i++) {
       const c = document.createElement('div');
@@ -556,7 +571,7 @@ export class Hud {
       case 'roll': this.act({ type: 'roll' }); break;
       case 'end': this.act({ type: 'endTurn' }); break;
       case 'mode': this.mode = this.mode === v ? null : (v as Mode); break;
-      case 'noSpot': this.toast(t(`noSpot.${v}`)); break;
+      case 'noSpot': sound.error(); this.toast(t(`noSpot.${v}`)); break;
       case 'lang': setLang(getLang() === 'ar' ? 'en' : 'ar'); return;
       case 'buyDev': this.act({ type: 'buyDev' }); break;
       case 'playDev': {
@@ -640,6 +655,7 @@ export class Hud {
         });
         break;
       case 'listen': this.voice?.setListen(!this.voice.listen); break;
+      case 'sound': sound.setEnabled(!sound.enabled); break;
       case 'view':
         this.view = this.view === '3d' ? '2d' : '3d';
         this.onViewChange(this.view);
@@ -727,9 +743,11 @@ export class Hud {
   /** an emoji thrown at a player's panel */
   reactAtPlayer(from: number, p: number, e: string) {
     const fromSel = from >= 0 ? this.playerSel(from) : '#top';
+    sound.whoosh();
     this.fly(`<span>${e}</span>`, this.centerOf(fromSel), this.centerOf(this.playerSel(p)), {
       cls: 'emoji',
       done: () => {
+        sound.splat(e === '🍅');
         this.bump(this.playerSel(p));
         const c = this.centerOf(this.playerSel(p));
         const pop = document.createElement('div');
@@ -889,7 +907,7 @@ export class Hud {
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
         ${dice}
-        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button>${s.phase === 'ended' ? `<button data-a="recap" title="${t('recap.open')}">📊</button>` : ''}<button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
+        <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button>${s.phase === 'ended' ? `<button data-a="recap" title="${t('recap.open')}">📊</button>` : ''}<button data-a="sound" class="soundbtn ${sound.enabled ? '' : 'off'}" title="${t(sound.enabled ? 'sound.on' : 'sound.off')}">${sound.enabled ? '🔔' : '🔕'}</button><button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
       ${this.talkersHtml()}
       ${this.paletteOpen ? `<div class="palette">${REACTIONS.map((e) => `<button data-a="pickReact" data-v="${e}">${e}</button>`).join('')}</div>` : ''}

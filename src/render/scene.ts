@@ -151,6 +151,7 @@ export class BoardView {
   private clouds = new Clouds();
   private particles = new Particles();
   private raiderLanding = false;
+  private piecesShown = false;
   private decor: IslandDecor | null = null;
   private spinners: THREE.Object3D[] = [];
   private ray = new THREE.Raycaster();
@@ -166,6 +167,9 @@ export class BoardView {
   onPick: (kind: PickKind, id: number) => void = () => {};
   /** fires when the dice come to rest */
   onDiceLanded: (sum: number) => void = () => {};
+  /** a new piece appeared on the board / the Raider landed (for sound effects) */
+  onBuilt: (kind: 'road' | 'settlement' | 'city') => void = () => {};
+  onRaiderLand: () => void = () => {};
   /** where the pointer is on the island (null when off it) */
   onHover: (pt: { x: number; z: number } | null) => void = () => {};
   /** while aiming a reaction, a tap on the island lands here instead of picking */
@@ -340,6 +344,7 @@ export class BoardView {
     if (this.raiderLanding && this.raider.position.distanceTo(this.raiderTarget) < 0.06) {
       this.raiderLanding = false;
       this.particles.smoke(this.raiderTarget.x, this.raiderTarget.z);
+      this.onRaiderLand();
     }
     this.renderer.render(this.scene, this.camera);
   }
@@ -540,7 +545,9 @@ export class BoardView {
         this.pieceKeys.delete(child.name);
       }
     }
-    const fresh = this.pieceKeys.size > 0;
+    // animate (and sound) new pieces, except when the board is first shown (e.g. joining mid-game)
+    const fresh = this.piecesShown;
+    this.piecesShown = true;
     for (const [k, make] of want) {
       if (this.pieceKeys.has(k)) continue;
       const o = make();
@@ -555,6 +562,7 @@ export class BoardView {
         const color = o.userData.color as string;
         // burst when the piece lands (roads: right away, buildings: after the drop)
         const fire = () => this.particles.burst(o.position.x, o.position.z, color, road ? 8 : 18);
+        this.onBuilt(road ? 'road' : k.includes('city') ? 'city' : 'settlement');
         if (road) fire();
         else setTimeout(fire, 280);
       }

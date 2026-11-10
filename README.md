@@ -32,6 +32,12 @@ It runs entirely in the browser, so you don't need a backend.
 - **Presence:** each panel shows what that player is doing (trading…, typing…, picking a road spot…), and
   everyone sees where the active player is pointing on the board.
 
+## Sound
+All sound effects are synthesized in the browser with the Web Audio API (no audio files): dice rattle and
+bounces, a rumble on 7s, card flicks, building knocks and chimes, coins for trades, a swish for steals, turn
+chimes, award and victory fanfares, chat pops, reaction whooshes and splats, soft button clicks, and a quiet
+ocean ambience in the 3D view. 🔔/🔕 in the top bar turns sound on or off (remembered).
+
 ## Game recap
 When someone wins, a recap opens (reopen it any time with 📊): final standings with a points breakdown, every
 player's revealed hand and fortune cards, a dice chart (each total vs. how often it should come up, most
@@ -91,6 +97,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/ui/hud.ts` | HTML overlay: hand, buttons, trading, dialogs |
 | `src/ui/voice.ts` | walkie-talkie voice chat over the relay |
 | `src/ui/recap.ts` | post-game recap: standings, final hands, charts, awards, stats |
+| `src/ui/sound.ts` | synthesized sound effects and ocean ambience |
 | `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |
 | `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |

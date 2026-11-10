@@ -35,6 +35,10 @@ export class Social {
   private splats: Splat[] = [];
   private pointers = new Map<number, Pointer>();
 
+  /** sound hooks */
+  onThrow: () => void = () => {};
+  onLand: (e: string) => void = () => {};
+
   constructor(private particles: Particles) {}
 
   /** an emoji arcs in from the sky, bounces on the spot and splashes */
@@ -47,9 +51,11 @@ export class Social {
     sprite.position.copy(from);
     this.group.add(sprite);
     this.flying.push({ sprite, from, to, t: 0, e, landed: false });
+    this.onThrow();
   }
 
   private land(f: Flying) {
+    this.onLand(f.e);
     const color = SPLASH[f.e] ?? 0xffe066;
     this.particles.burst(f.to.x, f.to.z, color, 14);
     if (f.e === '🍅') {

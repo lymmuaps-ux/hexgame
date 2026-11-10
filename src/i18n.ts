@@ -5,6 +5,7 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'sound.on': 'Sound on – tap to mute', 'sound.off': 'Sound off – tap to turn on',
   'recap.winner': '{name} wins!',
   'recap.length': '{n} turns', 'recap.minutes': '{n} min', 'recap.standings': 'Final standings', 'recap.hands': 'What everyone ended with',
   'recap.noCards': 'no fortune cards', 'recap.piecesLeft': 'left: {r} roads, {s} settlements, {c} cities',
@@ -182,6 +183,7 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'sound.on': 'الصوت مفعّل – انقر للكتم', 'sound.off': 'الصوت مكتوم – انقر للتشغيل',
   'recap.winner': 'فاز {name}!',
   'recap.length': '{n} دورًا', 'recap.minutes': '{n} دقيقة', 'recap.standings': 'الترتيب النهائي', 'recap.hands': 'ما انتهى به كل لاعب',
   'recap.noCards': 'لا بطاقات حظ', 'recap.piecesLeft': 'المتبقي: {r} طرق، {s} مستوطنات، {c} مدن',

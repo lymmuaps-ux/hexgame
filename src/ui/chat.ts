@@ -1,5 +1,6 @@
 import { GameState } from '../game/types';
 import { t } from '../i18n';
+import { sound } from './sound';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const REACTIONS = ['👍', '😂', '😮', '😡', '🎉', '👏'];
@@ -104,6 +105,7 @@ export class Chat {
 
   /** small card in the corner showing who wrote what; tap to open the chat */
   private notify(name: string, text: string, color: string) {
+    sound.pop();
     let stack = this.layer.querySelector<HTMLElement>('.chat-notes');
     if (!stack) {
       stack = document.createElement('div');
