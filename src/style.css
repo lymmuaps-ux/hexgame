@@ -622,3 +622,61 @@ table.stats tr.sum td, table.stats tr.sum th { font-weight: 800; color: var(--in
   .chart .endlabel { font-size: 17px; }
 }
 .soundbtn.off { opacity: 0.6; }
+
+/* lobby: game mode picker */
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.modebtn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: start; padding: 10px 12px; }
+.modebtn small { opacity: 0.75; font-size: 0.78rem; }
+.modebtn.on { border: 2px solid var(--accent); background: #fff3e0; box-shadow: 0 0 0 3px rgba(217,130,43,.2); }
+.modebtn[disabled] { opacity: 1; cursor: default; }
+.modebtn[disabled]:not(.on) { opacity: 0.55; }
+@media (max-width: 520px) { .modes { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------ Guildlands */
+.goods-sep { width: 2px; align-self: stretch; background: rgba(75, 51, 29, 0.25); border-radius: 2px; margin: 6px 2px; }
+.card.good { background: linear-gradient(160deg, #fffdf6, color-mix(in srgb, var(--c) 40%, white)); }
+.plevels { display: flex; gap: 6px; font-size: 0.75rem; margin: 1px 0 2px; }
+.plevels .lv { display: inline-flex; align-items: center; gap: 2px; padding: 0 5px; border-radius: 6px; background: color-mix(in srgb, var(--tc) 18%, white); border: 1px solid var(--tc); }
+#players.mini .plevels { display: none; }
+.build.glow { box-shadow: 0 0 0 3px rgba(42, 157, 143, .35); }
+.respick.good { background: #fbf3ff; }
+.offer.aqueduct button { font-size: 1.2rem; padding: 4px 8px; }
+.imp-intro { font-size: 0.85rem; color: #5b4a36; }
+.track { border-inline-start: 5px solid var(--tc); background: #fff; border-radius: 12px; padding: 8px 10px; margin: 8px 0; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.track-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.track-head .ticon { font-size: 1.3rem; }
+.track-head .pips { display: inline-flex; gap: 4px; }
+.pip { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--tc); background: #fff; display: inline-block; }
+.pip.on { background: var(--tc); }
+.pip.metro { border-radius: 3px; }
+.track-head .tcost { margin-inline-start: auto; font-size: 0.85rem; }
+.track-head .tcost small { opacity: 0.7; }
+.track-notes { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: #8a7a66; margin-top: 4px; }
+.track-notes .got { color: #1f7a4a; font-weight: 700; }
+.modal .err { margin: 6px 0; }
+
+/* ------------------------------------------------------------- tutorial */
+.tutorial-row { margin-top: 16px; text-align: center; }
+.tutbtn { width: 100%; padding: 11px; font-weight: 700; background: #e7f6f3; border: 2px solid #2a9d8f; color: #155e56; }
+.coach {
+  position: absolute; z-index: 11; inset-inline-start: 12px; bottom: 190px; width: min(360px, calc(100% - 24px));
+  background: rgba(255, 252, 244, 0.98); border: 3px solid #2a9d8f; border-radius: 16px; padding: 12px 14px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.35); font-size: 0.92rem; line-height: 1.45;
+}
+.coach.pop { animation: modal-in 0.35s cubic-bezier(.3,1.4,.5,1); }
+.coach-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.coach-head small { color: #8a7a66; }
+.coach-bar { height: 5px; background: #e5ddc9; border-radius: 3px; margin: 6px 0 4px; overflow: hidden; }
+.coach-bar i { display: block; height: 100%; background: #2a9d8f; transition: width 0.4s; }
+.coach p { margin: 8px 0; }
+.coach-wait { color: #155e56; font-weight: 600; font-size: 0.85rem; }
+.coach-btns { display: flex; justify-content: space-between; gap: 8px; }
+.coach-btns button:only-child { margin-inline-start: auto; }
+.tut-glow { outline: 4px solid #2a9d8f !important; outline-offset: 3px; animation: tut-glow 1s ease-in-out infinite !important; position: relative; z-index: 2; }
+@keyframes tut-glow { 50% { outline-color: rgba(42, 157, 143, 0.25); } }
+@media (max-width: 760px) {
+  .coach { top: 64px; bottom: auto; inset-inline-start: 50%; transform: translateX(-50%); font-size: 0.85rem; padding: 10px 12px; }
+  html[dir='rtl'] .coach { transform: translateX(50%); }
+}
+/* while a window is open, the coach steps aside to the top corner */
+#app:has(.modal-bg) .coach { top: calc(76px + env(safe-area-inset-top)); bottom: auto; }

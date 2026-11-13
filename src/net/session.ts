@@ -1,5 +1,5 @@
 import { applyAction, createGame } from '../game/rules';
-import { Action, GameState, MAX_PLAYERS } from '../game/types';
+import { Action, GameMode, GameState, MAX_PLAYERS } from '../game/types';
 import { M } from '../game/msg';
 import { Link, getTransport } from './transport';
 
@@ -8,6 +8,7 @@ export interface LobbyInfo {
   players: { name: string; connected: boolean }[];
   started: boolean;
   spectators?: string[];
+  mode?: GameMode;
 }
 
 /** a short piece of recorded speech (base64 audio + its mime type) */
@@ -56,6 +57,8 @@ export interface Session {
   react(r: Reaction): void;
   presence(pr: Presence): void;
   start?(): void;
+  /** host only, before the game starts */
+  setMode?(m: GameMode): void;
 }
 
 export function clientId(): string {
@@ -100,6 +103,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     ? resume.seats.map((s, i) => ({ ...s, link: null, clientId: i === 0 ? clientId() : s.clientId }))
     : [{ name, clientId: clientId(), link: null }];
   let state: GameState | null = resume?.state ?? null;
+  let mode: GameMode = state?.mode ?? 'base';
   // people watching: they get every update but cannot act (ids -1, -2, …)
   const spectators: { id: number; name: string; clientId: string; link: Link | null }[] = [];
 
@@ -107,6 +111,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     code,
     players: seats.map((s, i) => ({ name: s.name, connected: i === 0 || !!s.link })),
     started: !!state,
+    mode,
     spectators: spectators.filter((x) => x.link).map((x) => x.name),
   });
   const save = () => {
@@ -249,10 +254,15 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     voice: (chunk) => voice(0, chunk),
     react: (r) => react(0, r),
     presence: (pr) => presence(0, pr),
+    setMode: (m) => {
+      if (state) return;
+      mode = m;
+      publish();
+    },
     start: () => {
       if (state) return;
       if (seats.length < 2) return ev.onError(M('net.need2'));
-      state = createGame(seats.map((s) => s.name));
+      state = createGame(seats.map((s) => s.name), Math.random, mode);
       state.log.push(M('log.order', { names: seats.map((s) => s.name).join(' → ') }));
       publish();
     },
@@ -298,4 +308,56 @@ export async function joinGame(code: string, name: string, ev: SessionEvents): P
     link.onClose(() => ev.onDisconnect());
     link.send({ t: 'join', name, clientId: clientId() } satisfies ClientMsg);
   });
+}
+
+// -------------------------------------------------------- local practice game
+
+/** extra controls a tutorial has over its own offline game */
+export interface LocalControls {
+  /** change the game state directly (e.g. hand the player goods for a lesson) */
+  patch(fn: (s: GameState) => void): void;
+  /** make the next dice roll come out as these two dice */
+  setNextRoll(d: [number, number]): void;
+  state(): GameState;
+}
+
+/** A single-player game that runs entirely on this device (used by the tutorial). */
+export function localGame(name: string, mode: GameMode, ev: SessionEvents): Session & LocalControls {
+  let state = createGame([name], Math.random, mode);
+  let nextRoll: [number, number] | null = null;
+  const emit = () => ev.onState(state);
+  const session: Session & LocalControls = {
+    isHost: true,
+    code: 'PRACTICE',
+    seat: 0,
+    act: (a) => {
+      let rng: () => number = Math.random;
+      if (a.type === 'roll' && nextRoll) {
+        const seq = [(nextRoll[0] - 0.5) / 6, (nextRoll[1] - 0.5) / 6];
+        rng = () => (seq.length ? seq.shift()! : Math.random());
+        nextRoll = null;
+      }
+      const r = applyAction(state, 0, a, rng);
+      if (!r.ok) return ev.onError(r.error);
+      state = r.state;
+      emit();
+    },
+    chat: (text) => {
+      const list = state.chat ?? [];
+      state = { ...state, chat: [...list, { id: (list[list.length - 1]?.id ?? 0) + 1, p: 0, text: String(text).slice(0, 200) }] };
+      emit();
+    },
+    voice: () => {},
+    react: () => {},
+    presence: () => {},
+    patch: (fn) => {
+      state = structuredClone(state);
+      fn(state);
+      emit();
+    },
+    setNextRoll: (d) => (nextRoll = d),
+    state: () => state,
+  };
+  queueMicrotask(emit);
+  return session;
 }

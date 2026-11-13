@@ -1,23 +1,27 @@
 import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import { M } from './msg';
 import {
-  Action, COSTS, FxEvent, GameState, GameStats, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
-  Resource, WIN_POINTS, emptyRes, totalRes,
+  Action, COSTS, FxEvent, GameState, GameStats, GOODS, GOODS_INFO, GoodsMap, TRACKS, TRACK_INFO, Track,
+  emptyGoods, improveCost, isGood, winPoints, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  Resource, emptyRes, totalRes,
 } from './types';
 
 // ------------------------------------------------------------------ setup
 
-export function createGame(names: string[], rng: Rng = Math.random): GameState {
+export function createGame(names: string[], rng: Rng = Math.random, mode: 'base' | 'guilds' = 'base'): GameState {
   const board = generateBoard(rng);
   const players: Player[] = names.map((name, i) => ({
     name, color: PLAYER_COLORS[i], hand: emptyRes(), dev: [], newDev: [], guards: 0,
     roadsLeft: 15, settlementsLeft: 5, citiesLeft: 4, connected: true,
+    ...(mode === 'guilds' ? { goods: emptyGoods(), levels: { trade: 0, politics: 0, science: 0 } } : {}),
   }));
   const n = players.length;
   const forward = [...Array(n).keys()];
   const bank = emptyRes();
   RESOURCES.forEach((r) => (bank[r] = 19));
   return {
+    mode,
+    ...(mode === 'guilds' ? { metropolis: { trade: null, politics: null, science: null } } : {}),
     phase: 'setup', players, current: 0,
     setupOrder: [...forward, ...forward.slice().reverse()], setupIndex: 0,
     setupNeed: 'settlement', lastSetupVertex: null,
@@ -117,7 +121,7 @@ export function longestRoadFor(s: GameState, p: number): number {
 /** public = excludes hidden Monument cards */
 export function victoryPoints(s: GameState, p: number, includeHidden = true): number {
   let vp = 0;
-  for (const b of Object.values(s.buildings)) if (b.owner === p) vp += b.kind === 'city' ? 2 : 1;
+  for (const b of Object.values(s.buildings)) if (b.owner === p) vp += (b.kind === 'city' ? 2 : 1) + (b.metro ? 2 : 0);
   if (s.longestRoad.owner === p) vp += 2;
   if (s.strongestGuard.owner === p) vp += 2;
   if (includeHidden) {
@@ -162,6 +166,60 @@ function stats(s: GameState): GameStats {
   });
 }
 
+// ------------------------------------------------------------ Guildlands helpers
+
+const fmtGoods = (g: Partial<GoodsMap>) =>
+  GOODS.filter((k) => (g[k] ?? 0) > 0).map((k) => `${g[k]} ${GOODS_INFO[k].icon}`).join(' ') || '—';
+const cardIcon = (c: string) => (isGood(c) ? GOODS_INFO[c].icon : RES_INFO[c as Resource].icon);
+
+/** resources + goods in a player's hand */
+export function handSize(pl: Player) {
+  return totalRes(pl.hand) + (pl.goods ? GOODS.reduce((t, k) => t + pl.goods![k], 0) : 0);
+}
+
+/** cards a player may hold when a 7 is rolled (each city wall adds 2) */
+export function handLimit(s: GameState, p: number) {
+  const walls = Object.values(s.buildings).filter((b) => b.owner === p && b.wall).length;
+  return 7 + 2 * walls;
+}
+
+/** a player's cities (vertex ids) */
+export function ownCities(s: GameState, p: number) {
+  return Object.entries(s.buildings).filter(([, b]) => b.owner === p && b.kind === 'city').map(([v]) => Number(v));
+}
+
+export function validWallSpots(s: GameState, p: number) {
+  if (s.mode !== 'guilds') return [];
+  const walls = Object.values(s.buildings).filter((b) => b.owner === p && b.wall).length;
+  if (walls >= 3) return [];
+  return ownCities(s, p).filter((v) => !s.buildings[v].wall);
+}
+
+/** bank rate for goods: 4:1, or 2:1 with trade level 3 */
+export function goodsRate(s: GameState, p: number) {
+  return (s.players[p].levels?.trade ?? 0) >= 3 ? 2 : 4;
+}
+
+/** level 4 claims a free metropolis; level 5 takes it from someone who only has level 4 */
+function claimMetropolis(s: GameState, p: number, track: Track) {
+  const metros = (s.metropolis ??= { trade: null, politics: null, science: null });
+  const level = s.players[p].levels![track];
+  const holder = metros[track];
+  if (level < 4 || holder === p) return;
+  const holderLevel = holder === null ? 0 : s.players[holder].levels![track];
+  if (holder !== null && !(level === 5 && holderLevel < 5)) return;
+  const free = ownCities(s, p).find((v) => !s.buildings[v].metro);
+  if (free === undefined) return; // no city to hold it yet
+  if (holder !== null) {
+    const old = Object.entries(s.buildings).find(([, b]) => b.metro === track);
+    if (old) delete s.buildings[Number(old[0])].metro;
+  }
+  s.buildings[free] = { ...s.buildings[free], metro: track };
+  metros[track] = p;
+  fx(s, { t: 'metro', track, from: holder, to: p });
+  log(s, M('log.metro', { name: s.players[p].name, track }));
+}
+
 function fx(s: GameState, e: FxEvent) {
   (s.fx ??= { id: 1, list: [] }).list.push(e);
 }
@@ -190,7 +248,7 @@ function updateLongestRoad(s: GameState) {
 
 function checkWin(s: GameState) {
   const p = s.current;
-  if (victoryPoints(s, p) >= WIN_POINTS) {
+  if (victoryPoints(s, p) >= winPoints(s)) {
     s.phase = 'ended';
     s.winner = p;
     const st = stats(s);
@@ -202,15 +260,24 @@ function checkWin(s: GameState) {
 
 function produce(s: GameState, roll: number) {
   const gains = s.players.map(() => emptyRes());
+  const goodGains = s.players.map(() => emptyGoods());
   const items: ProductionItem[] = [];
+  const goodItems: ProductionItem[] = [];
+  const guilds = s.mode === 'guilds';
   s.hexes.forEach((h) => {
     if (h.number !== roll || h.id === s.raider || h.type === 'desert') return;
     for (const v of GEO.hexVertices[h.id]) {
       const b = s.buildings[v];
       if (!b) continue;
-      const n = b.kind === 'city' ? 2 : 1;
+      // Guildlands: a city on forest / pasture / mountains makes 1 resource + 1 good
+      const good = guilds && b.kind === 'city' ? (GOODS.find((g) => GOODS_INFO[g].from === h.type) ?? null) : null;
+      const n = b.kind === 'city' && !good ? 2 : 1;
       gains[b.owner][h.type] += n;
       items.push({ p: b.owner, hex: h.id, r: h.type, n });
+      if (good) {
+        goodGains[b.owner][good]++;
+        goodItems.push({ p: b.owner, hex: h.id, r: good, n: 1 });
+      }
     }
   });
   // what the Raider took away this roll
@@ -234,21 +301,37 @@ function produce(s: GameState, roll: number) {
   const left = gains.map((g) => ({ ...g }));
   const paid: ProductionItem[] = [];
   for (const it of items) {
-    const n = Math.min(it.n, left[it.p][it.r]);
+    const r = it.r as Resource;
+    const n = Math.min(it.n, left[it.p][r]);
     if (n <= 0) continue;
-    left[it.p][it.r] -= n;
+    left[it.p][r] -= n;
     paid.push({ ...it, n });
   }
+  paid.push(...goodItems);
   s.production = { id: (s.production?.id ?? 0) + 1, items: paid };
   gains.forEach((g, i) => {
-    if (totalRes(g) === 0) return;
+    const gg = goodGains[i];
+    const nGoods = GOODS.reduce((t, k) => t + gg[k], 0);
+    if (totalRes(g) === 0 && nGoods === 0) return;
     RESOURCES.forEach((r) => {
       s.players[i].hand[r] += g[r];
       s.bank[r] -= g[r];
       stats(s).players[i].produced[r] += g[r];
     });
-    log(s, M('log.receives', { name: s.players[i].name, cards: fmtRes(g) }));
+    if (nGoods) {
+      const pg = (s.players[i].goods ??= emptyGoods());
+      GOODS.forEach((k) => (pg[k] += gg[k]));
+      stats(s).players[i].goods = (stats(s).players[i].goods ?? 0) + nGoods;
+    }
+    log(s, M('log.receives', { name: s.players[i].name, cards: [fmtRes(g), fmtGoods(gg)].filter((x) => x !== '—').join(' ') || '—' }));
   });
+  // science level 3: whoever got nothing from this roll may take a resource of their choice
+  if (guilds) {
+    s.aqueduct = s.players
+      .map((pl, i) => ({ pl, i }))
+      .filter(({ pl, i }) => (pl.levels?.science ?? 0) >= 3 && totalRes(gains[i]) === 0 && GOODS.every((k) => goodGains[i][k] === 0))
+      .map(({ i }) => i);
+  }
 }
 
 function startRaider(s: GameState, after: 'roll' | 'actions') {
@@ -296,9 +379,13 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
   if (a.type === 'discard') {
     if (s.stage !== 'discard' || !s.pendingDiscards[p]) return M('err.noDiscard');
     const need = s.pendingDiscards[p];
-    if (totalRes(a.cards) !== need) return M('err.discardExactly', { n: need });
+    const dg = a.goods ?? {};
+    const nGoods = GOODS.reduce((t, k) => t + (dg[k] ?? 0), 0);
+    if (totalRes(a.cards) + nGoods !== need) return M('err.discardExactly', { n: need });
     if (!has(me.hand, a.cards) || RESOURCES.some((r) => (a.cards[r] ?? 0) < 0)) return M('err.invalidCards');
+    if (GOODS.some((k) => (dg[k] ?? 0) < 0 || (dg[k] ?? 0) > (me.goods?.[k] ?? 0))) return M('err.invalidCards');
     pay(s, p, a.cards);
+    if (me.goods) GOODS.forEach((k) => (me.goods![k] -= dg[k] ?? 0));
     delete s.pendingDiscards[p];
     log(s, M('log.discards', { name: me.name, n: need }));
     fx(s, { t: 'discard', p, n: need });
@@ -330,6 +417,16 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     return;
   }
 
+  if (a.type === 'aqueduct') {
+    if (!s.aqueduct?.includes(p)) return M('err.noAqueduct');
+    if (!RESOURCES.includes(a.res) || s.bank[a.res] < 1) return M('err.bankOut');
+    me.hand[a.res]++;
+    s.bank[a.res]--;
+    s.aqueduct = s.aqueduct.filter((x) => x !== p);
+    log(s, M('log.aqueduct', { name: me.name, cards: `1 ${RES_INFO[a.res].icon}` }));
+    s.production = { id: (s.production?.id ?? 0) + 1, items: [{ p, hex: s.raider, r: a.res, n: 1 }] };
+    return;
+  }
   if (a.type === 'counterTrade') {
     const t = s.trade;
     if (!t || t.id !== a.id) return M('err.offerGone');
@@ -371,9 +468,15 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
   if (s.phase === 'setup') {
     if (a.type === 'buildSettlement' && s.setupNeed === 'settlement') {
       if (!validSettlementSpots(s, p).includes(a.vertex)) return M('err.cantSettle');
-      s.buildings[a.vertex] = { owner: p, kind: 'settlement' };
-      stats(s).players[p].settlements++;
-      me.settlementsLeft--;
+      const asCity = s.mode === 'guilds' && s.setupIndex >= s.players.length;
+      s.buildings[a.vertex] = { owner: p, kind: asCity ? 'city' : 'settlement' };
+      if (asCity) {
+        stats(s).players[p].cities++;
+        me.citiesLeft--;
+      } else {
+        stats(s).players[p].settlements++;
+        me.settlementsLeft--;
+      }
       s.lastSetupVertex = a.vertex;
       s.setupNeed = 'road';
       if (s.setupIndex >= s.players.length) {
@@ -417,8 +520,8 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       if (sum === 7) {
         s.pendingDiscards = {};
         s.players.forEach((pl, i) => {
-          const n = totalRes(pl.hand);
-          if (n > 7) s.pendingDiscards[i] = Math.floor(n / 2);
+          const n = handSize(pl);
+          if (n > handLimit(s, i)) s.pendingDiscards[i] = Math.floor(n / 2);
         });
         log(s, M('log.raider'));
         s.afterRaider = 'actions';
@@ -500,6 +603,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     }
     case 'buyDev': {
       if (s.stage !== 'actions') return M('err.cantBuy');
+      if (s.mode === 'guilds') return M('err.noFortune');
       if (!s.devDeck.length) return M('err.deckEmpty');
       if (!canAfford(s, p, 'dev')) return M('err.notEnough');
       pay(s, p, COSTS.dev);
@@ -561,16 +665,24 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     case 'bankTrade': {
       if (s.stage !== 'actions') return M('err.cantTrade');
       if (a.give === a.get) return M('err.twoDifferent');
-      const rate = tradeRates(s, p)[a.give];
-      if (me.hand[a.give] < rate) return M('err.needRate', { n: rate, res: a.give });
-      if (s.bank[a.get] < 1) return M('err.bankOut');
-      me.hand[a.give] -= rate;
-      s.bank[a.give] += rate;
-      me.hand[a.get]++;
-      s.bank[a.get]--;
-      fx(s, { t: 'bank', p, give: a.give, n: rate, get: a.get });
+      if ((isGood(a.give) || isGood(a.get)) && s.mode !== 'guilds') return M('err.unknownAction');
+      const rate = isGood(a.give) ? goodsRate(s, p) : tradeRates(s, p)[a.give];
+      const have = isGood(a.give) ? (me.goods?.[a.give] ?? 0) : me.hand[a.give];
+      if (have < rate) return M('err.needRate', { n: rate, res: a.give });
+      if (!isGood(a.get) && s.bank[a.get] < 1) return M('err.bankOut');
+      if (isGood(a.give)) me.goods![a.give] -= rate;
+      else {
+        me.hand[a.give] -= rate;
+        s.bank[a.give] += rate;
+      }
+      if (isGood(a.get)) me.goods![a.get]++;
+      else {
+        me.hand[a.get]++;
+        s.bank[a.get]--;
+      }
+      if (!isGood(a.give) && !isGood(a.get)) fx(s, { t: 'bank', p, give: a.give, n: rate, get: a.get });
       stats(s).players[p].bankTrades++;
-      log(s, M('log.bankTrade', { name: me.name, n: rate, give: RES_INFO[a.give].icon, get: RES_INFO[a.get].icon }));
+      log(s, M('log.bankTrade', { name: me.name, n: rate, give: cardIcon(a.give), get: cardIcon(a.get) }));
       return;
     }
     case 'offerTrade': {
@@ -586,6 +698,34 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.trade = null;
       return;
     }
+    case 'improve': {
+      if (s.mode !== 'guilds' || !me.levels || !me.goods) return M('err.unknownAction');
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!TRACKS.includes(a.track)) return M('err.unknownAction');
+      const level = me.levels[a.track];
+      if (level >= 5) return M('err.maxLevel');
+      if (!ownCities(s, p).length) return M('err.needCity');
+      const good = TRACK_INFO[a.track].good;
+      const cost = improveCost(level);
+      if (me.goods[good] < cost) return M('err.needRate', { n: cost, res: good });
+      me.goods[good] -= cost;
+      me.levels[a.track] = level + 1;
+      fx(s, { t: 'improve', p, track: a.track, level: level + 1 });
+      log(s, M('log.improve', { name: me.name, track: a.track, n: level + 1 }));
+      claimMetropolis(s, p, a.track);
+      checkWin(s);
+      return;
+    }
+    case 'buildWall': {
+      if (s.mode !== 'guilds') return M('err.unknownAction');
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!canAfford(s, p, 'wall')) return M('err.notEnough');
+      if (!validWallSpots(s, p).includes(a.vertex)) return M('err.cantWall');
+      pay(s, p, COSTS.wall);
+      s.buildings[a.vertex] = { ...s.buildings[a.vertex], wall: true };
+      log(s, M('log.wall', { name: me.name }));
+      return;
+    }
     case 'endTurn': {
       if (s.stage !== 'actions') return M('err.finishStep');
       me.dev.push(...me.newDev);
@@ -596,6 +736,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.current = (s.current + 1) % s.players.length;
       s.stage = 'roll';
       s.turnNumber++;
+      s.aqueduct = [];
       stats(s).vp.push(s.players.map((_, i) => victoryPoints(s, i)));
       log(s, M('log.turn', { name: s.players[s.current].name }));
       return;

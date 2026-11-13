@@ -7,7 +7,7 @@ import { IslandDecor } from './island';
 import { Social } from './social';
 import { classicSurround, flatTile } from './classic';
 import { decorateTile, tileBase } from './tiles';
-import { GameState, RES_INFO } from '../game/types';
+import { GameState, RES_INFO, TRACK_INFO, Track } from '../game/types';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 export interface Selectable {
@@ -114,6 +114,40 @@ function cityMesh(color: string) {
   g.add(base, tower, roof, trim);
   return shadow(g);
 }
+/** Guildlands: a low stone ring with crenellations around a city */
+function wallMesh() {
+  const g = new THREE.Group();
+  const stone = std(0x9b968c);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.035, 6, 18), stone);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.035;
+  ring.scale.z = 1.6;
+  g.add(ring);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const merlon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), stone);
+    merlon.position.set(Math.cos(a) * 0.27, 0.08, Math.sin(a) * 0.27);
+    merlon.rotation.y = -a;
+    g.add(merlon);
+  }
+  return shadow(g);
+}
+
+/** Guildlands: a metropolis rises as a tall tower with a flag in its track's colour */
+function metroMesh(color: string, track: Track) {
+  const g = new THREE.Group();
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.42, 8), std(color, { roughness: 0.5 }));
+  tower.position.set(0.11, 0.37, 0.02);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.14, 8), std(0xe8d9a8));
+  cap.position.set(0.11, 0.65, 0.02);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.2, 5), std(0x5a3d22));
+  pole.position.set(0.11, 0.81, 0.02);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.08, 0.008), std(new THREE.Color(TRACK_INFO[track].color).getHex()));
+  flag.position.set(0.18, 0.86, 0.02);
+  g.add(tower, cap, pole, flag);
+  return shadow(g);
+}
+
 function roadMesh(color: string) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(HEX_SIZE * 0.66, 0.07, 0.085), std(color, { roughness: 0.5 }));
   m.position.y = 0.035;
@@ -521,8 +555,10 @@ export class BoardView {
     for (const [v, b] of Object.entries(s.buildings)) {
       const vx = GEO.vertices[Number(v)];
       const color = s.players[b.owner].color;
-      want.set(`b${v}${b.kind}${b.owner}`, () => {
+      want.set(`b${v}${b.kind}${b.owner}${b.wall ? 'w' : ''}${b.metro ?? ''}`, () => {
         const m = b.kind === 'city' ? cityMesh(color) : settlementMesh(color);
+        if (b.wall) m.add(wallMesh());
+        if (b.metro) m.add(metroMesh(color, b.metro));
         m.userData.color = color;
         m.position.set(vx.x, 0.2, vx.z);
         m.rotation.y = Number(v) * 1.3;

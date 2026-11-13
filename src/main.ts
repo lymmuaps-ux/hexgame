@@ -6,6 +6,8 @@ import { Hud } from './ui/hud';
 import { Chat } from './ui/chat';
 import { Voice } from './ui/voice';
 import { sound } from './ui/sound';
+import { Tutorial } from './ui/tutorial';
+import { localGame } from './net/session';
 import { M } from './game/msg';
 import { WIN_POINTS } from './game/types';
 import { applyDir, getLang, onLangChange, setLang, t, tr } from './i18n';
@@ -81,6 +83,10 @@ function renderHome(error = '') {
             ${saved?.state ? `<button id="resume">${t('lobby.resume', { code: esc(saved.code) })}</button>` : ''}
           </div>
         </div>
+        <div class="tutorial-row">
+          <button id="tutorial" class="tutbtn">${t('tut.start')}</button>
+          </div>
+        </div>
       </div>
     </div>`;
   bindLang();
@@ -104,6 +110,7 @@ function renderHome(error = '') {
     const n = getName();
     if (n) start(() => hostGame(n, events));
   });
+  app.querySelector('#tutorial')?.addEventListener('click', () => startTutorial(nameEl.value.trim() || t('hud.you').replace(/[()]/g, '')));
   app.querySelector('#resume')?.addEventListener('click', () => {
     const n = getName();
     if (n && saved) start(() => hostGame(n, events, saved));
@@ -132,6 +139,18 @@ async function start(fn: () => Promise<Session>) {
   }
 }
 
+let tutorial: Tutorial | null = null;
+/** an offline practice game in Guildlands mode with a coach panel */
+function startTutorial(name: string) {
+  const local = localGame(name, 'guilds', events);
+  session = local;
+  // the first state arrives right away; the coach appears on top of the game screen
+  queueMicrotask(() => {
+    tutorial = new Tutorial(app, local, () => location.reload(), () => hud?.closeModal());
+    tutorial.onState(local.state());
+  });
+}
+
 function renderWaiting(l: LobbyInfo) {
   if (!session || hud) return;
   screen = 'waiting';
@@ -143,6 +162,10 @@ function renderWaiting(l: LobbyInfo) {
         <h2>${t('lobby.roomCode')}</h2>
         <div class="bigcode" dir="ltr">${esc(l.code)}</div>
         <div class="share"><input readonly value="${esc(link)}" dir="ltr"><button id="copy">${t('lobby.copyLink')}</button></div>
+        <h3>${t('mode.title')}</h3>
+        <div class="modes">${(['base', 'guilds'] as const).map((m) => `<button class="modebtn ${(l.mode ?? 'base') === m ? 'on' : ''}" data-mode="${m}" ${session!.isHost ? '' : 'disabled'}>
+          <b>${t(`mode.${m}`)}</b><small>${t(`mode.${m}.sub`)}</small></button>`).join('')}</div>
+        ${session.isHost ? '' : `<p class="hint">${t('mode.hostPicks')}</p>`}
         <h3>${t('lobby.players', { n: l.players.length })}</h3>
         <ul class="plist">${l.players.map((p, i) => `<li><span class="dot" style="--pc:${['#e53935', '#1e88e5', '#f5f5f5', '#fb8c00'][i]}"></span>${esc(p.name)}${i === 0 ? ' 👑' : ''}${i === session!.seat ? ` ${t('hud.you')}` : ''}</li>`).join('')}</ul>
         ${session.isHost
@@ -155,6 +178,7 @@ function renderWaiting(l: LobbyInfo) {
     navigator.clipboard?.writeText(link).then(() => ((app.querySelector('#copy') as HTMLElement).textContent = t('lobby.copied'))));
   bindLang();
   app.querySelector('#start')?.addEventListener('click', () => session?.start?.());
+  app.querySelectorAll<HTMLElement>('.modebtn').forEach((b) => b.addEventListener('click', () => session?.setMode?.(b.dataset.mode as 'base' | 'guilds')));
 }
 
 // ------------------------------------------------------------------- game
@@ -226,6 +250,7 @@ function onState(s: GameState) {
   hud.chat?.update(s);
   s0 = s;
   hud.setState(s);
+  tutorial?.onState(s);
   board!.update(s, hud.selectable());
   if (board!.view !== hud.view) board!.setView(hud.view);
   sound.setAmbience(hud.view === '3d' && s.phase !== 'ended');

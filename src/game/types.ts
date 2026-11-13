@@ -3,6 +3,32 @@ export type Resource = (typeof RESOURCES)[number];
 export type TileType = Resource | 'desert';
 export type ResMap = Record<Resource, number>;
 
+// ---------------------------------------------------------- Guildlands mode
+/** game modes: the base game, or the Guildlands expansion (goods, improvements, knights, barbarians) */
+export type GameMode = 'base' | 'guilds';
+/** trade goods made by cities on forest, pasture and mountains */
+export const GOODS = ['paper', 'cloth', 'coin'] as const;
+export type Good = (typeof GOODS)[number];
+export type GoodsMap = Record<Good, number>;
+export const emptyGoods = (): GoodsMap => ({ paper: 0, cloth: 0, coin: 0 });
+export const GOODS_INFO: Record<Good, { icon: string; color: string; from: Resource }> = {
+  paper: { icon: '📜', color: '#d9c7a1', from: 'timber' },
+  cloth: { icon: '🧵', color: '#d97aa6', from: 'wool' },
+  coin: { icon: '🪙', color: '#d4a62a', from: 'ore' },
+};
+/** the three city-improvement tracks and the good each one costs */
+export const TRACKS = ['trade', 'politics', 'science'] as const;
+export type Track = (typeof TRACKS)[number];
+export const TRACK_INFO: Record<Track, { good: Good; icon: string; color: string }> = {
+  trade: { good: 'cloth', icon: '⚖️', color: '#e0a526' },
+  politics: { good: 'coin', icon: '👑', color: '#7b4bc4' },
+  science: { good: 'paper', icon: '🔭', color: '#2a9d8f' },
+};
+export type Card = Resource | Good;
+export const isGood = (c: string): c is Good => (GOODS as readonly string[]).includes(c);
+/** icon + colour for any card (resource or good) */
+export const cardInfo = (c: Card): { icon: string; color: string } => (isGood(c) ? GOODS_INFO[c] : RES_INFO[c]);
+
 export const RES_INFO: Record<Resource, { label: string; icon: string; color: string }> = {
   timber: { label: 'Timber', icon: '🌲', color: '#2f7d32' },
   clay: { label: 'Clay', icon: '🧱', color: '#c0602a' },
@@ -26,6 +52,7 @@ export const COSTS = {
   settlement: { timber: 1, clay: 1, wool: 1, grain: 1 },
   city: { grain: 2, ore: 3 },
   dev: { wool: 1, grain: 1, ore: 1 },
+  wall: { clay: 2 },
 } satisfies Record<string, Partial<ResMap>>;
 
 export type PortType = Resource | 'any';
@@ -55,11 +82,18 @@ export interface Player {
   settlementsLeft: number;
   citiesLeft: number;
   connected: boolean;
+  /** Guildlands */
+  goods?: GoodsMap;
+  levels?: Record<Track, number>;
 }
 
 export interface Building {
   owner: number;
   kind: 'settlement' | 'city';
+  /** Guildlands: a city wall (+2 hand limit) */
+  wall?: boolean;
+  /** Guildlands: this city is the metropolis of a track */
+  metro?: Track;
 }
 
 export type Stage =
@@ -83,7 +117,7 @@ export interface TradeOffer {
 export interface ProductionItem {
   p: number;
   hex: number;
-  r: Resource;
+  r: Card;
   n: number;
 }
 
@@ -95,11 +129,15 @@ export type FxEvent =
   | { t: 'bank'; p: number; give: Resource; n: number; get: Resource }
   | { t: 'discard'; p: number; n: number }
   | { t: 'buyDev'; p: number }
-  | { t: 'playDev'; p: number; card: DevCard };
+  | { t: 'playDev'; p: number; card: DevCard }
+  | { t: 'metro'; track: Track; from: number | null; to: number }
+  | { t: 'improve'; p: number; track: Track; level: number };
 
 export interface PlayerStats {
   /** resources received from dice rolls (and the second setup settlement) */
   produced: ResMap;
+  /** Guildlands: goods produced */
+  goods?: number;
   /** production a player would have received but the Raider blocked */
   blocked: number;
   stolen: number;
@@ -146,6 +184,11 @@ export interface GameState {
   /** the latest batch of resources handed out (by a roll or a setup settlement), for animation */
   production?: { id: number; items: ProductionItem[] };
   fx?: { id: number; list: FxEvent[] };
+  mode?: GameMode;
+  /** Guildlands: who holds each metropolis */
+  metropolis?: Record<Track, number | null>;
+  /** Guildlands: players with science level 3+ who may take a resource after a roll that gave them nothing */
+  aqueduct?: number[];
   /** numbers collected for the post-game recap */
   stats?: GameStats;
   /** in-game chat (added by the host outside the rules) */
@@ -171,7 +214,10 @@ export interface GameState {
 
 export type Action =
   | { type: 'roll' }
-  | { type: 'discard'; cards: Partial<ResMap> }
+  | { type: 'discard'; cards: Partial<ResMap>; goods?: Partial<GoodsMap> }
+  | { type: 'improve'; track: Track }
+  | { type: 'buildWall'; vertex: number }
+  | { type: 'aqueduct'; res: Resource }
   | { type: 'moveRaider'; hex: number }
   | { type: 'steal'; target: number }
   | { type: 'buildRoad'; edge: number }
@@ -179,7 +225,7 @@ export type Action =
   | { type: 'buildCity'; vertex: number }
   | { type: 'buyDev' }
   | { type: 'playDev'; card: DevCard; res?: Resource[] }
-  | { type: 'bankTrade'; give: Resource; get: Resource }
+  | { type: 'bankTrade'; give: Card; get: Card }
   | { type: 'offerTrade'; give: Partial<ResMap>; get: Partial<ResMap> }
   | { type: 'acceptTrade'; id: number }
   | { type: 'declineTrade'; id: number }
@@ -194,3 +240,7 @@ export const totalRes = (r: Partial<ResMap>) => RESOURCES.reduce((s, k) => s + (
 export const PLAYER_COLORS = ['#e53935', '#1e88e5', '#f5f5f5', '#fb8c00'];
 export const MAX_PLAYERS = 4;
 export const WIN_POINTS = 10;
+export const GUILDS_WIN_POINTS = 13;
+export const winPoints = (s: { mode?: GameMode }) => (s.mode === 'guilds' ? GUILDS_WIN_POINTS : WIN_POINTS);
+/** Guildlands: the next level of a track costs this many of its good */
+export const improveCost = (level: number) => level + 1;

@@ -4,9 +4,11 @@ import {
 } from '../game/rules';
 import {
   Action, COSTS, DEV_INFO, DevCard, GameState, RESOURCES, RES_INFO, ResMap, Resource,
-  WIN_POINTS, emptyRes, totalRes,
+  emptyRes, totalRes,
 } from '../game/types';
 import { Selectable } from '../render/scene';
+import { Card, GOODS, GOODS_INFO, Good, TRACKS, TRACK_INFO, Track, cardInfo, improveCost, isGood, winPoints } from '../game/types';
+import { goodsRate, handLimit, handSize, ownCities, validWallSpots } from '../game/rules';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
 import { bindRecapTips, recapHtml } from './recap';
@@ -17,19 +19,22 @@ import type { Reaction } from '../net/session';
 const REACTIONS = ['🍅', '👏', '😂', '😱', '🔥', '❤️', '😡', '🎉'];
 const FOCUS_ICON: Record<string, string> = { trade: '🤝', road: '🛤️', settlement: '🏠', city: '🏰', chat: '💬', rules: '📖', discard: '🃏', card: '🃏', steal: '🦹', raider: '🌩️', react: '🎯' };
 
-type Mode = null | 'road' | 'settlement' | 'city';
+type Mode = null | 'road' | 'settlement' | 'city' | 'wall';
 type Modal =
   | null
-  | { kind: 'trade'; tab: 'bank' | 'players'; give: ResMap; get: ResMap; bankGive: Resource | null; bankGet: Resource | null }
+  | { kind: 'trade'; tab: 'bank' | 'players'; give: ResMap; get: ResMap; bankGive: Card | null; bankGet: Card | null }
   | { kind: 'pick'; card: 'harvest' | 'embargo'; picks: Resource[] }
   | { kind: 'help' }
-  | { kind: 'counter'; id: number; give: ResMap; get: ResMap };
+  | { kind: 'counter'; id: number; give: ResMap; get: ResMap }
+  | { kind: 'improve' };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const resChip = (r: Resource, n?: number) =>
   `<span class="chip" style="--c:${RES_INFO[r].color}">${RES_INFO[r].icon}${n !== undefined ? `<b>${n}</b>` : ''}</span>`;
 const costHtml = (c: Partial<ResMap>) =>
   RESOURCES.filter((r) => c[r]).map((r) => `<span class="cost">${RES_INFO[r].icon}${(c[r] ?? 0) > 1 ? '×' + c[r] : ''}</span>`).join('');
+const cardChip = (c: Card, n?: number) =>
+  `<span class="chip" style="--c:${cardInfo(c).color}">${cardInfo(c).icon}${n !== undefined ? `<b>${n}</b>` : ''}</span>`;
 const fmt = (m: Partial<ResMap>) => RESOURCES.filter((r) => (m[r] ?? 0) > 0).map((r) => resChip(r, m[r])).join('');
 const DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
@@ -37,7 +42,7 @@ export class Hud {
   private state: GameState | null = null;
   private mode: Mode = null;
   private modal: Modal = null;
-  private discard: ResMap = emptyRes();
+  private discard: Record<string, number> = {};
   private discardKey = '';
   private logOpen = innerWidth > 900;
   /** compact left column (players + awards); defaults to compact on phones */
@@ -73,8 +78,8 @@ export class Hud {
   private rollTimer = 0;
   // resource hand-out animation: cards still "in flight" are not shown in the counts yet
   private seenProd: number | undefined | null = null;
-  private incoming: ResMap[] = [];
-  private flights: { p: number; hex: number; r: Resource }[] = [];
+  private incoming: Record<string, number>[] = [];
+  private flights: { p: number; hex: number; r: Card }[] = [];
   private flying = false;
   // other animations
   private seenFx: number | undefined | null = null;
@@ -175,8 +180,8 @@ export class Hud {
     if (!items.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     for (const it of items) {
       for (let k = 0; k < it.n; k++) {
-        this.incoming[it.p] ??= emptyRes();
-        this.incoming[it.p][it.r]++;
+        this.incoming[it.p] ??= {};
+        this.incoming[it.p][it.r] = (this.incoming[it.p][it.r] ?? 0) + 1;
         this.flights.push({ p: it.p, hex: it.hex, r: it.r });
       }
     }
@@ -196,7 +201,7 @@ export class Hud {
     setTimeout(() => this.nextFlight(), gap);
   }
 
-  private flyCard(f: { p: number; hex: number; r: Resource }) {
+  private flyCard(f: { p: number; hex: number; r: Card }) {
     const layer = this.root.parentElement ?? document.body;
     const targetSel = f.p === this.seat ? `.hand .card[data-r="${f.r}"]` : `.player[data-p="${f.p}"]`;
     const target = this.root.querySelector<HTMLElement>(targetSel);
@@ -207,7 +212,7 @@ export class Hud {
       el.remove();
       const inc = this.incoming[f.p];
       if (inc && inc[f.r] > 0) inc[f.r]--;
-      sound.card(RESOURCES.indexOf(f.r));
+      sound.card(Math.max(0, RESOURCES.indexOf(f.r as Resource)));
       this.render();
       const t = this.root.querySelector<HTMLElement>(targetSel);
       if (t) {
@@ -216,7 +221,7 @@ export class Hud {
         t.classList.add('bump');
         const plus = document.createElement('div');
         plus.className = 'plusone';
-        plus.textContent = `+1 ${RES_INFO[f.r].icon}`;
+        plus.textContent = `+1 ${cardInfo(f.r).icon}`;
         const r = t.getBoundingClientRect();
         plus.style.left = `${r.left + r.width / 2}px`;
         plus.style.top = `${r.top}px`;
@@ -226,9 +231,9 @@ export class Hud {
     };
     const el = document.createElement('div');
     el.className = 'flycard';
-    el.style.setProperty('--c', RES_INFO[f.r].color);
+    el.style.setProperty('--c', cardInfo(f.r).color);
     el.style.setProperty('--pc', this.state?.players[f.p].color ?? '#fff');
-    el.innerHTML = `<span>${RES_INFO[f.r].icon}</span>`;
+    el.innerHTML = `<span>${cardInfo(f.r).icon}</span>`;
     layer.appendChild(el);
     const from = this.hexScreenPos(f.hex);
     const tr = target?.getBoundingClientRect();
@@ -352,6 +357,21 @@ export class Hud {
           sound.playCard();
           const p = s.players[e.p];
           this.queueBanner(`${DEV_INFO[e.card].icon} ${t('banner.play', { name: esc(p.name), card: t(`dev.${e.card}`) })}`, p.color);
+          break;
+        }
+        case 'improve': {
+          const p = s.players[e.p];
+          sound.playCard();
+          this.queueBanner(`${TRACK_INFO[e.track].icon} ${t('banner.improve', { name: esc(p.name), track: t(`track.${e.track}`), n: e.level })}`, TRACK_INFO[e.track].color);
+          this.bump(this.playerSel(e.p));
+          break;
+        }
+        case 'metro': {
+          const p = s.players[e.to];
+          sound.award();
+          this.queueBanner(`🏙️ ${e.from === null
+            ? t('banner.metro', { name: esc(p.name), track: t(`track.${e.track}`) })
+            : t('banner.metroTaken', { name: esc(p.name), track: t(`track.${e.track}`), from: esc(s.players[e.from].name) })}`, TRACK_INFO[e.track].color);
           break;
         }
         case 'award': {
@@ -499,6 +519,44 @@ export class Hud {
     this.talkTimer = window.setTimeout(() => this.render(), 1500);
   }
 
+  /** Guildlands build buttons: city wall + city improvements */
+  private guildButtons(s: GameState, actions: boolean) {
+    const me = s.players[this.seat];
+    const walls = Object.values(s.buildings).filter((b) => b.owner === this.seat && b.wall).length;
+    const wallOk = actions && canAfford(s, this.seat, 'wall') && walls < 3;
+    const wallSpots = wallOk ? validWallSpots(s, this.seat).length : 1;
+    const wallBtn = wallOk && wallSpots === 0
+      ? `<button class="build blocked" data-a="noSpot" data-v="wall"><span>🧱 ${t('btn.wall')}</span><span class="costs">${costHtml(COSTS.wall)}</span><small>${t('btn.noSpot')}</small></button>`
+      : `<button class="build ${this.mode === 'wall' ? 'on' : ''}" data-a="mode" data-v="wall" ${wallOk ? '' : 'disabled'}><span>🧱 ${t('btn.wall')}</span><span class="costs">${costHtml(COSTS.wall)}</span><small>${t('btn.left', { n: 3 - walls })}</small></button>`;
+    const canImprove = actions && TRACKS.some((tr) => me.levels && me.levels[tr] < 5 && (me.goods?.[TRACK_INFO[tr].good] ?? 0) >= improveCost(me.levels[tr]));
+    return `${wallBtn}<button class="build ${canImprove ? 'glow' : ''}" data-a="improveOpen"><span>🏛️ ${t('btn.improve')}</span><small>${t('btn.improveSub')}</small></button>`;
+  }
+
+  private improveHtml(s: GameState) {
+    const me = s.players[this.seat];
+    const mine = s.current === this.seat && s.stage === 'actions';
+    const hasCity = ownCities(s, this.seat).length > 0;
+    const rows = TRACKS.map((tr) => {
+      const info = TRACK_INFO[tr];
+      const lvl = me?.levels?.[tr] ?? 0;
+      const cost = improveCost(lvl);
+      const have = me?.goods?.[info.good] ?? 0;
+      const holder = s.metropolis?.[tr];
+      const pips = [1, 2, 3, 4, 5].map((n) => `<i class="pip ${n <= lvl ? 'on' : ''} ${n >= 4 ? 'metro' : ''}" title="${t('imp.level', { n })}"></i>`).join('');
+      const can = mine && hasCity && lvl < 5 && have >= cost;
+      return `<div class="track" style="--tc:${info.color}">
+        <div class="track-head"><span class="ticon">${info.icon}</span><b>${t(`track.${tr}`)}</b><span class="pips">${pips}</span>
+          <span class="tcost">${lvl >= 5 ? t('imp.max') : t('imp.next', { n: cost, icon: GOODS_INFO[info.good].icon })} <small>(${t('imp.have', { n: have })})</small></span>
+          <button class="primary" data-a="improve" data-v="${tr}" ${can ? '' : 'disabled'}>${t('imp.btn')}</button></div>
+        <div class="track-notes"><span class="${lvl >= 3 ? 'got' : ''}">③ ${t(`imp.ability.${tr}`)}</span>
+          <span class="${holder === this.seat ? 'got' : ''}">④⑤ ${holder === null || holder === undefined ? t('imp.free') : t('imp.holder', { name: esc(s.players[holder].name) })}</span></div>
+      </div>`;
+    }).join('');
+    return `<p class="imp-intro">${t('imp.intro')}</p>${hasCity ? '' : `<p class="err">${t('imp.needCity')}</p>`}${rows}
+      <p class="imp-intro">${t('imp.metroRule')}</p>
+      <p class="imp-intro">🧱 ${t('imp.walls', { n: handLimit(s, this.seat) })}</p>`;
+  }
+
   private awardsHtml(s: GameState) {
     const card = (kind: 'road' | 'guard') => {
       const owner = kind === 'road' ? s.longestRoad.owner : s.strongestGuard.owner;
@@ -514,7 +572,8 @@ export class Hud {
           <div class="aowner">${p ? `<span class="dot"></span><b>${esc(p.name)}</b>${owner === this.seat ? ` ${t('hud.you')}` : ''} · ${detail}` : `<i>${t('award.unclaimed')}</i> · ${detail}`}</div>
         </div></div>`;
     };
-    return `<div class="awards">${card('road')}${card('guard')}</div>`;
+    // Guildlands has no knight fortune cards, so no Largest Army award
+    return `<div class="awards">${card('road')}${s.mode === 'guilds' ? '' : card('guard')}</div>`;
   }
 
   toast(msg: string) {
@@ -547,6 +606,7 @@ export class Hud {
     if (this.mode === 'road') return { kind: 'edge', ids: validRoadSpots(s, p) };
     if (this.mode === 'settlement') return { kind: 'vertex', ids: validSettlementSpots(s, p), style: 'settlement' };
     if (this.mode === 'city') return { kind: 'vertex', ids: validCitySpots(s, p), style: 'city' };
+    if (this.mode === 'wall') return { kind: 'vertex', ids: validWallSpots(s, p), style: 'city' };
     return null;
   }
 
@@ -557,7 +617,8 @@ export class Hud {
     else if (kind === 'edge') this.act({ type: 'buildRoad', edge: id });
     else if (kind === 'vertex') {
       const city = s.phase === 'main' && this.mode === 'city';
-      this.act(city ? { type: 'buildCity', vertex: id } : { type: 'buildSettlement', vertex: id });
+      if (s.phase === 'main' && this.mode === 'wall') this.act({ type: 'buildWall', vertex: id });
+      else this.act(city ? { type: 'buildCity', vertex: id } : { type: 'buildSettlement', vertex: id });
     }
     if (s.phase === 'main') this.mode = null;
   }
@@ -594,8 +655,8 @@ export class Hud {
         this.modal = { kind: 'trade', tab: 'bank', give: emptyRes(), get: emptyRes(), bankGive: null, bankGet: null };
         break;
       case 'tab': if (m?.kind === 'trade') m.tab = v as 'bank' | 'players'; break;
-      case 'bankGive': if (m?.kind === 'trade') m.bankGive = v as Resource; break;
-      case 'bankGet': if (m?.kind === 'trade') m.bankGet = v as Resource; break;
+      case 'bankGive': if (m?.kind === 'trade') m.bankGive = v as Card; break;
+      case 'bankGet': if (m?.kind === 'trade') m.bankGet = v as Card; break;
       case 'doBank':
         if (m?.kind === 'trade' && m.bankGive && m.bankGet) this.act({ type: 'bankTrade', give: m.bankGive, get: m.bankGet });
         break;
@@ -633,11 +694,21 @@ export class Hud {
         break;
       case 'acceptCounter': if (s.trade) this.act({ type: 'acceptCounter', id: s.trade.id, p: Number(v) }); break;
       case 'disc': {
-        const [r, d] = v.split(':') as [Resource, string];
-        this.discard[r] = Math.max(0, Math.min(s.players[this.seat].hand[r], this.discard[r] + Number(d)));
+        const [r, d] = v.split(':') as [Card, string];
+        const me = s.players[this.seat];
+        const have = isGood(r) ? (me.goods?.[r] ?? 0) : me.hand[r];
+        this.discard[r] = Math.max(0, Math.min(have, (this.discard[r] ?? 0) + Number(d)));
         break;
       }
-      case 'doDiscard': this.act({ type: 'discard', cards: { ...this.discard } }); break;
+      case 'doDiscard': {
+        const cards: Partial<ResMap> = {}, goods: Partial<Record<Good, number>> = {};
+        for (const [k, n] of Object.entries(this.discard)) if (n) (isGood(k) ? (goods[k] = n) : (cards[k as Resource] = n));
+        this.act({ type: 'discard', cards, goods });
+        break;
+      }
+      case 'improveOpen': this.modal = { kind: 'improve' }; break;
+      case 'improve': this.act({ type: 'improve', track: v as Track }); break;
+      case 'aqueduct': this.act({ type: 'aqueduct', res: v as Resource }); break;
       case 'steal': this.act({ type: 'steal', target: Number(v) }); break;
       case 'close':
         if (this.state?.phase === 'ended' && !this.recapClosed && !this.modal) this.recapClosed = true;
@@ -691,6 +762,13 @@ export class Hud {
   private setAim(e: string | null) {
     this.aim = e;
     this.onAimChange();
+  }
+
+  /** close any open window (used by the tutorial between steps) */
+  closeModal() {
+    this.modal = null;
+    this.mode = null;
+    this.render();
   }
 
   /** a tap on the island while aiming */
@@ -802,6 +880,7 @@ export class Hud {
     const me = s.players[this.seat] ?? { ...s.players[0], hand: emptyRes(), dev: [], newDev: [], roadsLeft: 0, settlementsLeft: 0, citiesLeft: 0 };
     const mine = s.current === this.seat && s.phase === 'main';
     const actions = mine && s.stage === 'actions';
+    const guilds = s.mode === 'guilds';
 
     const players = s.players.map((p, i) => {
       const vp = victoryPoints(s, i, i === this.seat);
@@ -814,9 +893,10 @@ export class Hud {
       const doingHtml = doing && doing !== 'idle' ? `<div class="pdoing">${FOCUS_ICON[doing] ?? '…'} ${t(`pres.${doing}`)}</div>` : '';
       return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}${this.aim ? ' aimable' : ''}" data-p="${i}" ${this.aim ? `data-a="reactAt" data-v="${i}"` : ''} style="--pc:${p.color}">${doingHtml}
         <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
+        ${guilds && p.levels ? `<div class="plevels">${TRACKS.map((tr) => `<span class="lv" style="--tc:${TRACK_INFO[tr].color}" title="${t(`track.${tr}`)} ${p.levels![tr]}">${TRACK_INFO[tr].icon}<b>${p.levels![tr]}</b></span>`).join('')}</div>` : ''}
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
-          <span title="${t('hud.cards')}">🂠 ${Math.max(0, totalRes(p.hand) - totalRes(this.incoming[i] ?? {}))}</span>
+          <span title="${t('hud.cards')}">🂠 ${Math.max(0, handSize(p) - Object.values(this.incoming[i] ?? {}).reduce((a, b) => a + b, 0))}</span>
           <span title="${t('hud.devCards')}">🃏 ${p.dev.length + p.newDev.length}</span>
           <span title="${t('hud.guards')}">🛡️ ${p.guards}</span>
           <span title="${t('hud.longest')}">🛤️ ${longestRoadFor(s, i)}</span>
@@ -832,7 +912,9 @@ export class Hud {
 
     const hand = RESOURCES.map((r) =>
       `<div class="card" data-r="${r}" style="--c:${RES_INFO[r].color}" title="${resLabel(r)}"><span>${RES_INFO[r].icon}</span><b>${Math.max(0, me.hand[r] - (this.incoming[this.seat]?.[r] ?? 0))}</b><small>${resLabel(r)}</small></div>`,
-    ).join('');
+    ).join('') + (guilds ? `<div class="goods-sep"></div>` + GOODS.map((g) =>
+      `<div class="card good" data-r="${g}" style="--c:${GOODS_INFO[g].color}" title="${t(`res.${g}`)}"><span>${GOODS_INFO[g].icon}</span><b>${Math.max(0, (me.goods?.[g] ?? 0) - (this.incoming[this.seat]?.[g] ?? 0))}</b><small>${t(`res.${g}`)}</small></div>`,
+    ).join('') : '');
 
     const devCounts = new Map<DevCard, { ready: number; fresh: number }>();
     me.dev.forEach((c) => { const e = devCounts.get(c) ?? { ready: 0, fresh: 0 }; e.ready++; devCounts.set(c, e); });
@@ -861,8 +943,8 @@ export class Hud {
       ${bld('road', t('btn.road'), '🛤️', me.roadsLeft)}
       ${bld('settlement', t('btn.settlement'), '🏠', me.settlementsLeft)}
       ${bld('city', t('btn.city'), '🏰', me.citiesLeft)}
-      <button class="build" data-a="buyDev" ${actions && canAfford(s, this.seat, 'dev') && s.devDeck.length ? '' : 'disabled'}>
-        <span>🃏 ${t('btn.fortune')}</span><span class="costs">${costHtml(COSTS.dev)}</span><small>${t('btn.left', { n: s.devDeck.length })}</small></button>
+      ${guilds ? this.guildButtons(s, actions) : `<button class="build" data-a="buyDev" ${actions && canAfford(s, this.seat, 'dev') && s.devDeck.length ? '' : 'disabled'}>
+        <span>🃏 ${t('btn.fortune')}</span><span class="costs">${costHtml(COSTS.dev)}</span><small>${t('btn.left', { n: s.devDeck.length })}</small></button>`}
       <button class="build" data-a="trade" ${actions ? '' : 'disabled'}><span>🤝 ${t('btn.trade')}</span><small>${t('btn.tradeSub')}</small></button>
       ${mine && s.stage === 'actions' ? `<button class="primary" data-a="end">${t('btn.end')}</button>` : ''}`;
 
@@ -891,6 +973,9 @@ export class Hud {
       if (counters) offer = offer ? offer.replace(/<\/div>$/, `<div class="counters">${counters}</div></div>`) : `<div class="offer">${counters}</div>`;
     }
 
+    if (s.aqueduct?.includes(this.seat)) {
+      offer = `<div class="offer incoming aqueduct">🔭 ${t('aq.title')} ${RESOURCES.map((r) => `<button data-a="aqueduct" data-v="${r}" ${s.bank[r] > 0 ? '' : 'disabled'}>${RES_INFO[r].icon}</button>`).join('')}</div>` + offer;
+    }
     const log = s.log.slice(-60).map((l) => `<div>${tr(l, true)}</div>`).join('');
 
     let handHtml = `${hand}${devs ? `<div class="devs">${devs}</div>` : ''}`;
@@ -943,11 +1028,12 @@ export class Hud {
     const need = s.stage === 'discard' ? s.pendingDiscards[this.seat] : 0;
     if (need) {
       const key = `${s.turnNumber}-${need}`;
-      if (key !== this.discardKey) { this.discardKey = key; this.discard = emptyRes(); }
-      const chosen = totalRes(this.discard);
+      if (key !== this.discardKey) { this.discardKey = key; this.discard = {}; }
+      const chosen = Object.values(this.discard).reduce((a, b) => a + b, 0);
+      const cards: Card[] = s.mode === 'guilds' ? [...RESOURCES, ...GOODS] : [...RESOURCES];
       return wrap(t('m.discardTitle', { n: need }),
-        `<div class="pickers">${RESOURCES.map((r) => `<div class="picker">${resChip(r, me.hand[r])}
-          <button data-a="disc" data-v="${r}:-1">−</button><b>${this.discard[r]}</b><button data-a="disc" data-v="${r}:1">+</button></div>`).join('')}</div>
+        `<div class="pickers">${cards.map((r) => `<div class="picker">${cardChip(r, isGood(r) ? (me.goods?.[r] ?? 0) : me.hand[r])}
+          <button data-a="disc" data-v="${r}:-1">−</button><b>${this.discard[r] ?? 0}</b><button data-a="disc" data-v="${r}:1">+</button></div>`).join('')}</div>
          <button class="primary" data-a="doDiscard" ${chosen === need ? '' : 'disabled'}>${t('m.discardBtn', { a: chosen, b: need })}</button>`, false);
     }
 
@@ -959,7 +1045,7 @@ export class Hud {
     const m = this.modal;
     if (!m) return '';
     if (m.kind === 'help') {
-      return wrap(t('m.help'), `<div class="help">${t('help.body', { n: WIN_POINTS })}</div>`);
+      return wrap(t('m.help'), `<div class="help">${s.mode === 'guilds' ? t('help.guilds') : ''}${t('help.body', { n: winPoints(s) })}</div>`);
     }
     if (m.kind === 'pick') {
       const need = m.card === 'harvest' ? 2 : 1;
@@ -974,15 +1060,20 @@ export class Hud {
       return wrap(t('m.counterTitle'), `<p>${t('m.give')}</p>${pickers('give')}<p>${t('m.want')}</p>${pickers('get')}
         <button class="primary" data-a="sendCounter" ${totalRes(m.give) && totalRes(m.get) ? '' : 'disabled'}>${t('m.sendCounter')}</button>`);
     }
+    if (m.kind === 'improve') return wrap(`🏛️ ${t('imp.title')}`, this.improveHtml(s));
     // trade
     const rates = tradeRates(s, this.seat);
     const tabs = `<div class="tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-a="tab" data-v="bank">${t('m.tabBank')}</button>
       <button class="${m.tab === 'players' ? 'on' : ''}" data-a="tab" data-v="players">${t('m.tabPlayers')}</button></div>`;
     if (m.tab === 'bank') {
+      const gr = goodsRate(s, this.seat);
+      const extra = s.mode === 'guilds' ? GOODS : [];
       const gives = RESOURCES.map((r) => `<button class="respick ${m.bankGive === r ? 'on' : ''}" data-a="bankGive" data-v="${r}" ${me.hand[r] >= rates[r] ? '' : 'disabled'}>
-        ${rates[r]}× ${RES_INFO[r].icon}</button>`).join('');
+        ${rates[r]}× ${RES_INFO[r].icon}</button>`).join('') + extra.map((g) => `<button class="respick good ${m.bankGive === g ? 'on' : ''}" data-a="bankGive" data-v="${g}" ${(me.goods?.[g] ?? 0) >= gr ? '' : 'disabled'}>
+        ${gr}× ${GOODS_INFO[g].icon}</button>`).join('');
       const gets = RESOURCES.map((r) => `<button class="respick ${m.bankGet === r ? 'on' : ''}" data-a="bankGet" data-v="${r}" ${s.bank[r] > 0 && r !== m.bankGive ? '' : 'disabled'}>
-        1× ${RES_INFO[r].icon}</button>`).join('');
+        1× ${RES_INFO[r].icon}</button>`).join('') + extra.map((g) => `<button class="respick good ${m.bankGet === g ? 'on' : ''}" data-a="bankGet" data-v="${g}" ${g !== m.bankGive ? '' : 'disabled'}>
+        1× ${GOODS_INFO[g].icon}</button>`).join('');
       return wrap(t('m.trade'), `${tabs}<p>${t('m.give')}</p><div class="row">${gives}</div><p>${t('m.get')}</p><div class="row">${gets}</div>
         <button class="primary" data-a="doBank" ${m.bankGive && m.bankGet && m.bankGive !== m.bankGet ? '' : 'disabled'}>${t('m.doBank')}</button>`);
     }

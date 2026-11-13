@@ -32,6 +32,16 @@ It runs entirely in the browser, so you don't need a backend.
 - **Presence:** each panel shows what that player is doing (trading…, typing…, picking a road spot…), and
   everyone sees where the active player is pointing on the board.
 
+## Guildlands mode (expansion, in progress)
+The host picks **Base game** or **Guildlands** in the lobby. Guildlands is our own expansion built on the same
+kind of mechanics as the well-known "cities and knights" style expansions, with original names, texts and art.
+Stage 1 (done): 13 points to win; the second setup placement is a city; cities on forest/pasture/mountains make
+1 resource + 1 good (📜 paper, 🧵 cloth, 🪙 coin); three city-improvement tracks (Trade, Politics, Science; level n
+costs n goods) with level-3 bonuses and a metropolis (+2 points) per track at level 4/5; city walls (+2 hand limit);
+goods trade 4:1 with the bank (2:1 with Trade level 3). No fortune cards in this mode.
+Coming next: knights (stage 2), the barbarian ship and event die (stage 3), progress cards (stage 4).
+An **interactive tutorial** (lobby → 🎓) teaches the mode in an offline practice game and grows with each stage.
+
 ## Sound
 All sound effects are synthesized in the browser with the Web Audio API (no audio files): dice rattle and
 bounces, a rumble on 7s, card flicks, building knocks and chimes, coins for trades, a swish for steals, turn
@@ -98,6 +108,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/ui/voice.ts` | walkie-talkie voice chat over the relay |
 | `src/ui/recap.ts` | post-game recap: standings, final hands, charts, awards, stats |
 | `src/ui/sound.ts` | synthesized sound effects and ocean ambience |
+| `src/ui/tutorial.ts` | interactive Guildlands tutorial (coach panel, guided steps) |
 | `src/ui/chat.ts` | in-game chat, speech bubbles, emoji reactions |
 | `src/i18n.ts` | English & Arabic texts, language switching, right-to-left |
 | `scripts/simulate.ts` | `npm test` plays 300 random games to check the rules |

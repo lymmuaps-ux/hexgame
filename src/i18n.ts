@@ -5,6 +5,50 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'tut.waiting': 'Your move – the tutorial continues once you have done it.',
+  'tut.s.welcome': 'Welcome to <b>Guildlands</b>! It plays like the base game, with three additions: <b>goods</b>, <b>city improvements</b> and <b>city walls</b>. You need <b>13 points</b> to win. This practice island is just for you – follow the steps.',
+  'tut.s.settle': 'Place your first <b>settlement</b> on one of the glowing corners. Corners touching numbers with many dots (6, 8, 5, 9) produce most often.',
+  'tut.s.road1': 'Now place a <b>road</b> next to your settlement.',
+  'tut.s.city': 'Here is the first difference: in Guildlands your second placement is a <b>city</b>. Choose a corner next to forest 🌲, pasture 🐑 or mountains ⛰️ – cities there also make goods.',
+  'tut.s.road2': 'Place a road next to your new city.',
+  'tut.s.roll': '<b>Roll the dice!</b> We have loaded them so they hit a tile next to your city.',
+  'tut.s.goods': 'Your city produced a resource <b>and a good</b>. Forest gives 📜 paper, pasture gives 🧵 cloth, mountains give 🪙 coin. Settlements never make goods, and cities on fields or hills simply make 2 resources. Goods sit in your hand next to resources and count toward the 7-card limit.',
+  'tut.s.improve1': 'Goods pay for <b>city improvements</b>. We gave you 1 🧵 cloth: open <b>🏛️ Improve</b> and raise <b>Trade</b> to level 1.',
+  'tut.s.improve3': 'Each level costs one more good than the last (level 2 = 2, level 3 = 3). We added 5 🧵 – raise Trade to <b>level 3</b>.',
+  'tut.s.bonuses': 'Level 3 brings a bonus. <b>Trade</b>: swap goods with the bank 2:1 (instead of 4:1). <b>Science</b>: when a roll gives you nothing, take a resource of your choice. <b>Politics</b> becomes important once knights arrive.',
+  'tut.s.metro': 'Level 4 founds that track’s <b>metropolis</b> – worth 2 extra points. We added 4 🧵: raise Trade to <b>level 4</b>.',
+  'tut.s.metroInfo': 'Your city now has a tower with an amber flag: that is your Trade metropolis. There is only one per track, and a player who reaches <b>level 5</b> takes it from someone who is only at level 4 – so keep an eye on your rivals.',
+  'tut.s.wall': 'Last tool: <b>city walls</b>. We gave you 2 🧱 clay – tap <b>🧱 Wall</b>, then tap your city.',
+  'tut.s.wallInfo': 'When a 7 is rolled, anyone holding more cards than their limit discards half. The limit is 7 (goods count too) and <b>each wall adds 2</b>, up to 3 walls.',
+  'tut.s.finish': 'That is the core of Guildlands! Still to come in this mode: <b>knights</b>, the <b>barbarian ship</b> and <b>progress cards</b> – this tutorial will grow with them. Keep practising on this island, or head back to the lobby to play with friends.',
+  'res.paper': 'Paper', 'res.cloth': 'Cloth', 'res.coin': 'Coin',
+  'track.trade': 'Trade', 'track.politics': 'Politics', 'track.science': 'Science',
+  'btn.improve': 'Improve', 'btn.improveSub': 'city upgrades', 'btn.wall': 'Wall', 'piece.wall': 'city wall',
+  'noSpot.wall': 'Walls go on your cities – you need a city without a wall (at most 3 walls).',
+  'imp.title': 'City improvements', 'imp.intro': 'Spend goods to raise a track: the next level costs as many goods as its number (level 1 = 1, level 5 = 5). You need at least one city.',
+  'imp.level': 'Level {n}', 'imp.next': 'next: {n} {icon}', 'imp.have': 'you have {n}', 'imp.max': 'top level', 'imp.btn': 'Improve',
+  'imp.ability.trade': 'Level 3 unlocks 2:1 bank trades with goods',
+  'imp.ability.politics': 'Level 3 lets knights reach the top rank (arrives with knights)',
+  'imp.ability.science': 'Level 3: when a roll gives you nothing, pick a free resource',
+  'imp.free': 'Metropolis free – first to level 4 claims it', 'imp.holder': 'Metropolis held by {name}',
+  'imp.metroRule': '🏙️ A metropolis turns one of your cities into a landmark worth 2 extra points. Reaching level 5 takes a metropolis from someone who is only at level 4.',
+  'imp.walls': 'Your hand limit on a 7 is {n} cards (each city wall adds 2, up to 3 walls).', 'imp.needCity': 'Build a city first – improvements need one.',
+  'aq.title': 'Science bonus: the dice gave you nothing – pick a resource:',
+  'banner.improve': '{name}: {track} level {n}', 'banner.metro': '{name} founds the {track} metropolis!',
+  'banner.metroTaken': '{name} takes the {track} metropolis from {from}!',
+  'log.improve': '{name} raises {track} to level {n}.', 'log.metro': '🏙️ {name} now holds the {track} metropolis.',
+  'log.wall': '🧱 {name} builds a city wall.', 'log.aqueduct': '🔭 {name} takes {cards} (science bonus).',
+  'err.noAqueduct': 'No science bonus right now.', 'err.maxLevel': 'That track is already at the top level.',
+  'err.needCity': 'You need a city first.', 'err.cantWall': 'Walls go on your cities (one per city, at most 3).',
+  'err.noFortune': 'There are no fortune cards in Guildlands.',
+  'help.guilds': `<p><b>Guildlands mode:</b> 13 points to win. Your second setup placement is a city. Cities on forest, pasture and mountains make 1 resource + 1 good (📜 paper, 🧵 cloth, 🪙 coin) instead of 2 resources. Goods count toward the 7-card limit.</p>
+<p><b>City improvements (🏛️):</b> spend 🧵 on Trade, 🪙 on Politics, 📜 on Science. Level 3 gives a bonus, and level 4 claims that track's metropolis (+2 points) unless someone holds it; level 5 takes it from a level-4 holder.</p>
+<p><b>City walls (🧱, 2 clay):</b> each wall lets you keep 2 more cards when a 7 is rolled. Goods trade with the bank at 4:1 (2:1 with Trade level 3). No fortune cards in this mode.</p>`,
+  'tut.start': '🎓 Learn Guildlands (tutorial)', 'tut.title': 'Guildlands tutorial', 'tut.next': 'Next', 'tut.skip': 'Leave tutorial',
+  'tut.done': 'Back to the lobby', 'tut.step': 'Step {a} of {b}', 'tut.practice': 'Keep practising',
+  'mode.title': 'Game mode', 'mode.base': 'Base game', 'mode.base.sub': 'The classic island · 10 points',
+  'mode.guilds': 'Guildlands', 'mode.guilds.sub': 'Goods, city improvements, metropolises, walls · 13 points',
+  'mode.hostPicks': 'The host picks the mode.',
   'sound.on': 'Sound on – tap to mute', 'sound.off': 'Sound off – tap to turn on',
   'recap.winner': '{name} wins!',
   'recap.length': '{n} turns', 'recap.minutes': '{n} min', 'recap.standings': 'Final standings', 'recap.hands': 'What everyone ended with',
@@ -183,6 +227,50 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'tut.waiting': 'دورك – يتابع الدرس بعد أن تقوم بالخطوة.',
+  'tut.s.welcome': 'أهلًا بك في <b>أرض النقابات</b>! تُلعب مثل اللعبة الأساسية مع ثلاث إضافات: <b>البضائع</b> و<b>تطوير المدن</b> و<b>أسوار المدن</b>. تحتاج إلى <b>13 نقطة</b> للفوز. هذه الجزيرة للتدريب فقط – اتبع الخطوات.',
+  'tut.s.settle': 'ضع <b>مستوطنتك</b> الأولى على إحدى الزوايا المضيئة. الزوايا المجاورة لأرقام بنقاط كثيرة (6، 8، 5، 9) تنتج أكثر.',
+  'tut.s.road1': 'الآن ضع <b>طريقًا</b> بجانب مستوطنتك.',
+  'tut.s.city': 'إليك أول اختلاف: في أرض النقابات يكون وضعك الثاني <b>مدينة</b>. اختر زاوية بجانب غابة 🌲 أو مرعى 🐑 أو جبال ⛰️ – المدن هناك تنتج بضائع أيضًا.',
+  'tut.s.road2': 'ضع طريقًا بجانب مدينتك الجديدة.',
+  'tut.s.roll': '<b>ارمِ النرد!</b> لقد جهّزناه ليصيب أرضًا بجانب مدينتك.',
+  'tut.s.goods': 'أنتجت مدينتك موردًا <b>وبضاعة</b>. الغابة تعطي 📜 ورقًا، والمرعى 🧵 قماشًا، والجبال 🪙 عملة. المستوطنات لا تنتج بضائع أبدًا، والمدن على الحقول أو التلال تنتج موردين فقط. البضائع في يدك بجانب الموارد وتُحتسب ضمن حد 7 بطاقات.',
+  'tut.s.improve1': 'البضائع تدفع ثمن <b>تطوير المدن</b>. أعطيناك 🧵 قماشًا واحدًا: افتح <b>🏛️ تطوير</b> وارفع <b>التجارة</b> إلى المستوى 1.',
+  'tut.s.improve3': 'كل مستوى يكلّف بضاعة أكثر من السابق (المستوى 2 = 2، المستوى 3 = 3). أضفنا 5 🧵 – ارفع التجارة إلى <b>المستوى 3</b>.',
+  'tut.s.bonuses': 'المستوى 3 يمنح مكافأة. <b>التجارة</b>: بادل البضائع مع البنك 2:1 (بدل 4:1). <b>العلوم</b>: عندما لا تعطيك الرمية شيئًا، خذ موردًا من اختيارك. <b>السياسة</b> تصبح مهمة عند وصول الفرسان.',
+  'tut.s.metro': 'المستوى 4 يؤسس <b>عاصمة</b> المسار – وتساوي نقطتين إضافيتين. أضفنا 4 🧵: ارفع التجارة إلى <b>المستوى 4</b>.',
+  'tut.s.metroInfo': 'لمدينتك الآن برج بعلم كهرماني: هذه عاصمة التجارة. توجد عاصمة واحدة لكل مسار، ومن يبلغ <b>المستوى 5</b> ينتزعها ممن هو في المستوى 4 فقط – فراقب منافسيك.',
+  'tut.s.wall': 'آخر أداة: <b>أسوار المدن</b>. أعطيناك طينتين 🧱 – انقر <b>🧱 سور</b> ثم انقر مدينتك.',
+  'tut.s.wallInfo': 'عند رمي الرقم 7، يتخلّص من نصف بطاقاته كل من يحمل أكثر من حدّه. الحد 7 (البضائع محسوبة) و<b>كل سور يضيف 2</b>، حتى 3 أسوار.',
+  'tut.s.finish': 'هذا جوهر أرض النقابات! قادم في هذا النمط: <b>الفرسان</b> و<b>سفينة البرابرة</b> و<b>بطاقات التقدّم</b> – وسيكبر هذا الدرس معها. تابع التدريب على هذه الجزيرة، أو عد إلى الردهة للعب مع أصدقائك.',
+  'res.paper': 'ورق', 'res.cloth': 'قماش', 'res.coin': 'عملة',
+  'track.trade': 'التجارة', 'track.politics': 'السياسة', 'track.science': 'العلوم',
+  'btn.improve': 'تطوير', 'btn.improveSub': 'تحسين المدن', 'btn.wall': 'سور', 'piece.wall': 'سور مدينة',
+  'noSpot.wall': 'الأسوار تُبنى على مدنك – تحتاج إلى مدينة بلا سور (3 أسوار كحد أقصى).',
+  'imp.title': 'تطوير المدن', 'imp.intro': 'أنفق البضائع لرفع مسار: المستوى التالي يكلّف عددًا من البضائع يساوي رقمه (المستوى 1 = 1، المستوى 5 = 5). تحتاج إلى مدينة واحدة على الأقل.',
+  'imp.level': 'المستوى {n}', 'imp.next': 'التالي: {n} {icon}', 'imp.have': 'لديك {n}', 'imp.max': 'أعلى مستوى', 'imp.btn': 'تطوير',
+  'imp.ability.trade': 'المستوى 3 يتيح مبادلة البضائع مع البنك 2:1',
+  'imp.ability.politics': 'المستوى 3 يتيح للفرسان بلوغ أعلى رتبة (يأتي مع الفرسان)',
+  'imp.ability.science': 'المستوى 3: عندما لا تعطيك الرمية شيئًا، اختر موردًا مجانيًا',
+  'imp.free': 'العاصمة متاحة – أول من يبلغ المستوى 4 يأخذها', 'imp.holder': 'العاصمة لدى {name}',
+  'imp.metroRule': '🏙️ العاصمة تحوّل إحدى مدنك إلى معلم يساوي نقطتين إضافيتين. بلوغ المستوى 5 ينتزع العاصمة ممن هو في المستوى 4 فقط.',
+  'imp.walls': 'حدّ البطاقات عند الرقم 7 هو {n} (كل سور يضيف 2، حتى 3 أسوار).', 'imp.needCity': 'ابنِ مدينة أولًا – التطوير يحتاج إليها.',
+  'aq.title': 'مكافأة العلوم: لم تعطك الرمية شيئًا – اختر موردًا:',
+  'banner.improve': '{name}: {track} المستوى {n}', 'banner.metro': '{name} يؤسس عاصمة {track}!',
+  'banner.metroTaken': '{name} ينتزع عاصمة {track} من {from}!',
+  'log.improve': '{name} يرفع {track} إلى المستوى {n}.', 'log.metro': '🏙️ {name} يملك الآن عاصمة {track}.',
+  'log.wall': '🧱 {name} يبني سور مدينة.', 'log.aqueduct': '🔭 {name} يأخذ {cards} (مكافأة العلوم).',
+  'err.noAqueduct': 'لا توجد مكافأة علوم الآن.', 'err.maxLevel': 'هذا المسار في أعلى مستوى بالفعل.',
+  'err.needCity': 'تحتاج إلى مدينة أولًا.', 'err.cantWall': 'الأسوار تُبنى على مدنك (سور لكل مدينة، 3 كحد أقصى).',
+  'err.noFortune': 'لا توجد بطاقات حظ في أرض النقابات.',
+  'help.guilds': `<p><b>نمط أرض النقابات:</b> 13 نقطة للفوز. وضعك الثاني في الإعداد يكون مدينة. المدن على الغابة والمرعى والجبال تنتج موردًا واحدًا + بضاعة (📜 ورق، 🧵 قماش، 🪙 عملة) بدل موردين. البضائع تُحتسب ضمن حد 7 بطاقات.</p>
+<p><b>تطوير المدن (🏛️):</b> أنفق 🧵 على التجارة، و🪙 على السياسة، و📜 على العلوم. المستوى 3 يمنح مكافأة، والمستوى 4 يأخذ عاصمة المسار (+2 نقطة) ما لم يملكها أحد؛ والمستوى 5 ينتزعها ممن هو في المستوى 4.</p>
+<p><b>أسوار المدن (🧱، طينتان):</b> كل سور يسمح لك بالاحتفاظ ببطاقتين إضافيتين عند الرقم 7. البضائع تُبادل مع البنك 4:1 (أو 2:1 مع التجارة مستوى 3). لا بطاقات حظ في هذا النمط.</p>`,
+  'tut.start': '🎓 تعلّم أرض النقابات (درس تفاعلي)', 'tut.title': 'درس أرض النقابات', 'tut.next': 'التالي', 'tut.skip': 'مغادرة الدرس',
+  'tut.done': 'العودة إلى الردهة', 'tut.step': 'الخطوة {a} من {b}', 'tut.practice': 'تابع التدريب',
+  'mode.title': 'نمط اللعب', 'mode.base': 'اللعبة الأساسية', 'mode.base.sub': 'الجزيرة الكلاسيكية · 10 نقاط',
+  'mode.guilds': 'أرض النقابات', 'mode.guilds.sub': 'بضائع، تطوير المدن، العواصم، الأسوار · 13 نقطة',
+  'mode.hostPicks': 'المضيف يختار النمط.',
   'sound.on': 'الصوت مفعّل – انقر للكتم', 'sound.off': 'الصوت مكتوم – انقر للتشغيل',
   'recap.winner': 'فاز {name}!',
   'recap.length': '{n} دورًا', 'recap.minutes': '{n} دقيقة', 'recap.standings': 'الترتيب النهائي', 'recap.hands': 'ما انتهى به كل لاعب',
@@ -390,7 +478,8 @@ export function t(key: string, params: MsgParams = {}): string {
   return tmpl.replace(/\{(\w+)\}/g, (_, k: string) => {
     const v = params[k];
     if (v === undefined) return `{${k}}`;
-    if (k === 'res' && RESOURCES.includes(v as Resource)) return t(`res.${v}`);
+    if (k === 'res' && (RESOURCES.includes(v as Resource) || ['paper', 'cloth', 'coin'].includes(String(v)))) return t(`res.${v}`);
+    if (k === 'track' && ['trade', 'politics', 'science'].includes(String(v))) return t(`track.${v}`);
     return String(v);
   });
 }
