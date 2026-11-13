@@ -8,7 +8,8 @@ import {
 } from '../game/types';
 import { Selectable } from '../render/scene';
 import { Card, GOODS, GOODS_INFO, Good, TRACKS, TRACK_INFO, Track, cardInfo, improveCost, isGood, winPoints } from '../game/types';
-import { goodsRate, handLimit, handSize, ownCities, validWallSpots } from '../game/rules';
+import { goodsRate, handLimit, handSize, knightMoves, ownCities, readyKnights, validKnightSpots, validWallSpots } from '../game/rules';
+import { GEO } from '../game/board';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
 import { bindRecapTips, recapHtml } from './recap';
@@ -19,14 +20,15 @@ import type { Reaction } from '../net/session';
 const REACTIONS = ['🍅', '👏', '😂', '😱', '🔥', '❤️', '😡', '🎉'];
 const FOCUS_ICON: Record<string, string> = { trade: '🤝', road: '🛤️', settlement: '🏠', city: '🏰', chat: '💬', rules: '📖', discard: '🃏', card: '🃏', steal: '🦹', raider: '🌩️', react: '🎯' };
 
-type Mode = null | 'road' | 'settlement' | 'city' | 'wall';
+type Mode = null | 'road' | 'settlement' | 'city' | 'wall' | 'knight' | 'kact' | 'kpro' | 'kmove' | 'kchase';
 type Modal =
   | null
   | { kind: 'trade'; tab: 'bank' | 'players'; give: ResMap; get: ResMap; bankGive: Card | null; bankGet: Card | null }
   | { kind: 'pick'; card: 'harvest' | 'embargo'; picks: Resource[] }
   | { kind: 'help' }
   | { kind: 'counter'; id: number; give: ResMap; get: ResMap }
-  | { kind: 'improve' };
+  | { kind: 'improve' }
+  | { kind: 'knights' };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const resChip = (r: Resource, n?: number) =>
@@ -65,6 +67,8 @@ export class Hud {
   onPresence: (focus: string) => void = () => {};
   view: '3d' | '2d' = '3d';
   private recapClosed = false;
+  /** knight being moved (first tap of a move) */
+  private kfrom: number | null = null;
   onViewChange: (v: '3d' | '2d') => void = () => {};
   /** names of whoever sent voice, by seat (spectators have negative seats) */
   private talkerNames = new Map<number, string>();
@@ -366,6 +370,20 @@ export class Hud {
           this.bump(this.playerSel(e.p));
           break;
         }
+        case 'knight': {
+          const p = s.players[e.p];
+          if (e.act === 'build') sound.build('road');
+          else if (e.act === 'activate') sound.playCard();
+          else if (e.act === 'promote') {
+            sound.award();
+            this.queueBanner(`⬆️ ${t('banner.knightPromote', { name: esc(p.name) })}`, p.color);
+          } else if (e.act === 'move') sound.whoosh();
+          else if (e.act === 'displace') {
+            sound.steal();
+            this.queueBanner(`⚔️ ${t('banner.knightDisplace', { name: esc(p.name) })}`, p.color);
+          } else if (e.act === 'chase') this.queueBanner(`🛡️ ${t('banner.knightChase', { name: esc(p.name) })}`, p.color);
+          break;
+        }
         case 'metro': {
           const p = s.players[e.to];
           sound.award();
@@ -529,7 +547,63 @@ export class Hud {
       ? `<button class="build blocked" data-a="noSpot" data-v="wall"><span>🧱 ${t('btn.wall')}</span><span class="costs">${costHtml(COSTS.wall)}</span><small>${t('btn.noSpot')}</small></button>`
       : `<button class="build ${this.mode === 'wall' ? 'on' : ''}" data-a="mode" data-v="wall" ${wallOk ? '' : 'disabled'}><span>🧱 ${t('btn.wall')}</span><span class="costs">${costHtml(COSTS.wall)}</span><small>${t('btn.left', { n: 3 - walls })}</small></button>`;
     const canImprove = actions && TRACKS.some((tr) => me.levels && me.levels[tr] < 5 && (me.goods?.[TRACK_INFO[tr].good] ?? 0) >= improveCost(me.levels[tr]));
-    return `${wallBtn}<button class="build ${canImprove ? 'glow' : ''}" data-a="improveOpen"><span>🏛️ ${t('btn.improve')}</span><small>${t('btn.improveSub')}</small></button>`;
+    const left = 2 - Object.values(s.knights ?? {}).filter((k) => k.owner === this.seat && k.level === 1).length;
+    const kOk = actions && canAfford(s, this.seat, 'knight') && left > 0;
+    const kSpots = kOk ? validKnightSpots(s, this.seat).length : 1;
+    const knightBtn = kOk && kSpots === 0
+      ? `<button class="build blocked" data-a="noSpot" data-v="knight"><span>🛡️ ${t('btn.knight')}</span><span class="costs">${costHtml(COSTS.knight)}</span><small>${t('btn.noSpot')}</small></button>`
+      : `<button class="build ${this.mode === 'knight' ? 'on' : ''}" data-a="mode" data-v="knight" ${kOk ? '' : 'disabled'}><span>🛡️ ${t('btn.knight')}</span><span class="costs">${costHtml(COSTS.knight)}</span><small>${t('btn.left', { n: left })}</small></button>`;
+    const hasKnights = Object.values(s.knights ?? {}).some((k) => k.owner === this.seat);
+    const kBusy = this.mode?.startsWith('k') && this.mode !== 'knight';
+    return `${wallBtn}${knightBtn}<button class="build ${kBusy ? 'on' : ''}" data-a="${kBusy ? 'mode' : 'knightsOpen'}" data-v="${this.mode ?? ''}" ${actions && hasKnights ? '' : 'disabled'}><span>⚔️ ${t('btn.knights')}</span><small>${t('btn.knightsSub')}</small></button>`
+      + `<button class="build ${canImprove ? 'glow' : ''}" data-a="improveOpen"><span>🏛️ ${t('btn.improve')}</span><small>${t('btn.improveSub')}</small></button>`;
+  }
+
+  /** board corners for the current knight mode (null when not in a knight mode) */
+  private knightTargets(s: GameState): number[] | null {
+    const p = this.seat;
+    const mineK = Object.entries(s.knights ?? {}).filter(([, k]) => k.owner === p);
+    const me = s.players[p];
+    switch (this.mode) {
+      case 'knight': return validKnightSpots(s, p);
+      case 'kact': return mineK.filter(([, k]) => !k.active).map(([v]) => Number(v));
+      case 'kpro': return mineK.filter(([, k]) => k.level < 3 && (k.level < 2 || (me.levels?.politics ?? 0) >= 3) && k.promotedTurn !== s.turnNumber
+        && Object.values(s.knights ?? {}).filter((o) => o.owner === p && o.level === k.level + 1).length < 2).map(([v]) => Number(v));
+      case 'kmove': return this.kfrom !== null ? knightMoves(s, this.kfrom) : readyKnights(s, p).filter((v) => knightMoves(s, v).length);
+      case 'kchase': return readyKnights(s, p).filter((v) => GEO.hexVertices[s.raider].includes(v));
+      default: return null;
+    }
+  }
+
+  /** "⚔️ active strength / total" on a player panel */
+  private knightSummary(s: GameState, p: number) {
+    const ks = Object.values(s.knights ?? {}).filter((k) => k.owner === p);
+    if (!ks.length) return '';
+    const total = ks.reduce((a, k) => a + k.level, 0);
+    const act = ks.filter((k) => k.active).reduce((a, k) => a + k.level, 0);
+    return `<div class="pknights" title="${t('kn.strength')}">⚔️ <b>${act}</b>/${total}</div>`;
+  }
+
+  private knightsHtml(s: GameState) {
+    const saved = this.mode;
+    const count = (m: Mode) => { this.mode = m; this.kfrom = null; const n = this.knightTargets(s)?.length ?? 0; this.mode = saved; return n; };
+    const me = s.players[this.seat];
+    const row = (mode: Mode, icon: string, cost: string, key: string, afford = true) => {
+      const n = count(mode);
+      return `<button class="kaction" data-a="kmode" data-v="${mode}" ${n && afford ? '' : 'disabled'}>
+        <span class="kicon">${icon}</span><span class="ktext"><b>${t(`kn.${key}`)}</b><small>${t(`kn.${key}.sub`)}</small></span>
+        <span class="kcost">${cost}</span><span class="kcount">${n}</span></button>`;
+    };
+    const ks = Object.values(s.knights ?? {}).filter((k) => k.owner === this.seat);
+    return `<p class="imp-intro">${t('kn.intro')}</p>
+      <div class="kactions">
+        ${row('kact', '💡', costHtml(COSTS.activate), 'activate', me.hand.grain >= 1)}
+        ${row('kpro', '⬆️', costHtml(COSTS.promote), 'promote', me.hand.wool >= 1 && me.hand.ore >= 1)}
+        ${row('kmove', '🐎', '', 'move')}
+        ${row('kchase', '🦹', '', 'chase')}
+      </div>
+      <p class="imp-intro">${t('kn.yours', { a: ks.filter((k) => k.level === 1).length, b: ks.filter((k) => k.level === 2).length, c: ks.filter((k) => k.level === 3).length })}
+      ${(me.levels?.politics ?? 0) >= 3 ? '' : ` ${t('kn.needPolitics')}`}</p>`;
   }
 
   private improveHtml(s: GameState) {
@@ -607,6 +681,8 @@ export class Hud {
     if (this.mode === 'settlement') return { kind: 'vertex', ids: validSettlementSpots(s, p), style: 'settlement' };
     if (this.mode === 'city') return { kind: 'vertex', ids: validCitySpots(s, p), style: 'city' };
     if (this.mode === 'wall') return { kind: 'vertex', ids: validWallSpots(s, p), style: 'city' };
+    const k = this.knightTargets(s);
+    if (k) return { kind: 'vertex', ids: k, style: 'city' };
     return null;
   }
 
@@ -618,6 +694,20 @@ export class Hud {
     else if (kind === 'vertex') {
       const city = s.phase === 'main' && this.mode === 'city';
       if (s.phase === 'main' && this.mode === 'wall') this.act({ type: 'buildWall', vertex: id });
+      else if (s.phase === 'main' && this.mode === 'knight') this.act({ type: 'buildKnight', vertex: id });
+      else if (s.phase === 'main' && this.mode === 'kact') this.act({ type: 'activateKnight', vertex: id });
+      else if (s.phase === 'main' && this.mode === 'kpro') this.act({ type: 'promoteKnight', vertex: id });
+      else if (s.phase === 'main' && this.mode === 'kchase') this.act({ type: 'chaseRaider', vertex: id });
+      else if (s.phase === 'main' && this.mode === 'kmove') {
+        if (this.kfrom === null) {
+          this.kfrom = id; // first tap: which knight; second tap: where to
+          this.render();
+          this.onChange();
+          return;
+        }
+        this.act({ type: 'moveKnight', from: this.kfrom, to: id });
+        this.kfrom = null;
+      }
       else this.act(city ? { type: 'buildCity', vertex: id } : { type: 'buildSettlement', vertex: id });
     }
     if (s.phase === 'main') this.mode = null;
@@ -631,7 +721,7 @@ export class Hud {
     switch (a) {
       case 'roll': this.act({ type: 'roll' }); break;
       case 'end': this.act({ type: 'endTurn' }); break;
-      case 'mode': this.mode = this.mode === v ? null : (v as Mode); break;
+      case 'mode': this.mode = this.mode === v ? null : (v as Mode); this.kfrom = null; break;
       case 'noSpot': sound.error(); this.toast(t(`noSpot.${v}`)); break;
       case 'lang': setLang(getLang() === 'ar' ? 'en' : 'ar'); return;
       case 'buyDev': this.act({ type: 'buyDev' }); break;
@@ -707,6 +797,12 @@ export class Hud {
         break;
       }
       case 'improveOpen': this.modal = { kind: 'improve' }; break;
+      case 'knightsOpen': this.modal = { kind: 'knights' }; break;
+      case 'kmode':
+        this.modal = null;
+        this.kfrom = null;
+        this.mode = v as Mode;
+        break;
       case 'improve': this.act({ type: 'improve', track: v as Track }); break;
       case 'aqueduct': this.act({ type: 'aqueduct', res: v as Resource }); break;
       case 'steal': this.act({ type: 'steal', target: Number(v) }); break;
@@ -864,6 +960,10 @@ export class Hud {
       case 'roadworks': return mine ? t('st.roadworks', { n: s.roadworksLeft }) : t('st.roadworking', who);
       default:
         if (!mine) return t('st.turnOf', who);
+        if (this.mode && this.mode.startsWith('k')) {
+          const n = this.selectable()?.ids.length ?? 0;
+          return t(this.mode === 'kmove' && this.kfrom !== null ? 'st.k.kmove2' : `st.k.${this.mode}`, { n });
+        }
         if (this.mode) {
           const n = this.selectable()?.ids.length ?? 0;
           return t('st.clickSpot', { what: t(`piece.${this.mode}`), n });
@@ -893,7 +993,7 @@ export class Hud {
       const doingHtml = doing && doing !== 'idle' ? `<div class="pdoing">${FOCUS_ICON[doing] ?? '…'} ${t(`pres.${doing}`)}</div>` : '';
       return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}${this.aim ? ' aimable' : ''}" data-p="${i}" ${this.aim ? `data-a="reactAt" data-v="${i}"` : ''} style="--pc:${p.color}">${doingHtml}
         <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
-        ${guilds && p.levels ? `<div class="plevels">${TRACKS.map((tr) => `<span class="lv" style="--tc:${TRACK_INFO[tr].color}" title="${t(`track.${tr}`)} ${p.levels![tr]}">${TRACK_INFO[tr].icon}<b>${p.levels![tr]}</b></span>`).join('')}</div>` : ''}
+        ${guilds ? this.knightSummary(s, i) : ''}${guilds && p.levels ? `<div class="plevels">${TRACKS.map((tr) => `<span class="lv" style="--tc:${TRACK_INFO[tr].color}" title="${t(`track.${tr}`)} ${p.levels![tr]}">${TRACK_INFO[tr].icon}<b>${p.levels![tr]}</b></span>`).join('')}</div>` : ''}
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
           <span title="${t('hud.cards')}">🂠 ${Math.max(0, handSize(p) - Object.values(this.incoming[i] ?? {}).reduce((a, b) => a + b, 0))}</span>
@@ -1061,6 +1161,7 @@ export class Hud {
         <button class="primary" data-a="sendCounter" ${totalRes(m.give) && totalRes(m.get) ? '' : 'disabled'}>${t('m.sendCounter')}</button>`);
     }
     if (m.kind === 'improve') return wrap(`🏛️ ${t('imp.title')}`, this.improveHtml(s));
+    if (m.kind === 'knights') return wrap(`⚔️ ${t('kn.title')}`, this.knightsHtml(s));
     // trade
     const rates = tradeRates(s, this.seat);
     const tabs = `<div class="tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-a="tab" data-v="bank">${t('m.tabBank')}</button>

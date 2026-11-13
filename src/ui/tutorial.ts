@@ -20,6 +20,8 @@ interface Step {
   done?: (s: GameState) => boolean;
 }
 
+let turnAtStep = 0;
+let raiderAtStep = -1;
 const mine = (s: GameState) => Object.values(s.buildings).filter((b) => b.owner === 0);
 
 /** load the dice so the next roll hits a tile next to the player's city, preferring one that makes goods */
@@ -68,6 +70,62 @@ const STEPS: Step[] = [
     done: (s) => mine(s).some((b) => b.wall),
   },
   { key: 'wallInfo' },
+  // ---------------------------------------------------------------- knights
+  { key: 'kIntro' },
+  {
+    key: 'kRecruit', highlight: 'button[data-a=mode][data-v=knight]',
+    enter: (c) => c.patch((s) => { s.players[0].hand.wool += 1; s.players[0].hand.ore += 1; }),
+    done: (s) => Object.values(s.knights ?? {}).some((k) => k.owner === 0),
+  },
+  {
+    key: 'kActivate', highlight: 'button[data-a=knightsOpen], .kaction[data-v=kact]',
+    enter: (c) => c.patch((s) => { s.players[0].hand.grain += 1; }),
+    done: (s) => Object.values(s.knights ?? {}).some((k) => k.owner === 0 && k.active),
+  },
+  {
+    key: 'kEndTurn', highlight: 'button[data-a=end]',
+    enter: (c) => (turnAtStep = c.state().turnNumber),
+    done: (s) => s.turnNumber > turnAtStep,
+  },
+  { key: 'kRoll', highlight: 'button[data-a=roll]', enter: (c) => c.setNextRoll([2, 3]), done: (s) => s.stage !== 'roll' },
+  {
+    key: 'kPromote', highlight: 'button[data-a=knightsOpen], .kaction[data-v=kpro]',
+    enter: (c) => c.patch((s) => { s.players[0].hand.wool += 1; s.players[0].hand.ore += 1; }),
+    done: (s) => Object.values(s.knights ?? {}).some((k) => k.owner === 0 && k.level >= 2),
+  },
+  {
+    key: 'kMove', highlight: 'button[data-a=knightsOpen], .kaction[data-v=kmove]',
+    // lay a road from the knight to a free corner so it has somewhere to go
+    enter: (c) => c.patch((s) => {
+      const v = Number(Object.entries(s.knights ?? {}).find(([, k]) => k.owner === 0)?.[0]);
+      const e = GEO.vertices[v]?.edges.find((id) => {
+        const ed = GEO.edges[id];
+        const n = ed.a === v ? ed.b : ed.a;
+        return s.roads[id] === undefined && !s.buildings[n] && !s.knights?.[n];
+      });
+      if (e !== undefined) {
+        s.roads[e] = 0;
+        s.players[0].roadsLeft--;
+      }
+    }),
+    done: (s) => Object.values(s.knights ?? {}).some((k) => k.owner === 0 && k.actedTurn === s.turnNumber),
+  },
+  {
+    key: 'kChase', highlight: 'button[data-a=knightsOpen], .kaction[data-v=kchase]',
+    // wake the knight again and park the robber next to it for this lesson
+    enter: (c) => c.patch((s) => {
+      const [vs, k] = Object.entries(s.knights ?? {}).find(([, k]) => k.owner === 0) ?? [];
+      if (!k || vs === undefined) return;
+      k.active = true;
+      delete k.activatedTurn;
+      delete k.actedTurn;
+      const hex = GEO.vertices[Number(vs)].hexes.find((h) => h !== s.raider) ?? GEO.vertices[Number(vs)].hexes[0];
+      s.raider = hex;
+      raiderAtStep = hex;
+    }),
+    done: (s) => s.raider !== raiderAtStep && s.stage === 'actions',
+  },
+  { key: 'kInfo' },
   { key: 'finish' },
 ];
 
@@ -100,6 +158,8 @@ export class Tutorial {
     if (this.entered !== this.i) {
       this.entered = this.i;
       step.enter?.(this.c);
+      // setting up the lesson may have changed the game: judge "done" on the current state
+      s = this.c.state();
     }
     if (step.done?.(s)) {
       // let the player see what happened before moving on

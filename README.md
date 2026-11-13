@@ -39,7 +39,12 @@ Stage 1 (done): 13 points to win; the second setup placement is a city; cities o
 1 resource + 1 good (📜 paper, 🧵 cloth, 🪙 coin); three city-improvement tracks (Trade, Politics, Science; level n
 costs n goods) with level-3 bonuses and a metropolis (+2 points) per track at level 4/5; city walls (+2 hand limit);
 goods trade 4:1 with the bank (2:1 with Trade level 3). No fortune cards in this mode.
-Coming next: knights (stage 2), the barbarian ship and event die (stage 3), progress cards (stage 4).
+Stage 2 (done): knights. Recruit (1 wool + 1 ore) on an empty corner your roads reach; 2 knights per level.
+Activate with 1 grain; an active knight takes one action per turn (not on the turn it was activated) and then
+rests: move along your own roads, push away a weaker enemy knight (it retreats along its owner's roads or leaves
+the board), or chase the robber from an adjacent tile. Promote with 1 wool + 1 ore once per turn per knight;
+level 3 needs Politics level 3. Knights block other players' roads and break their longest road.
+Coming next: the barbarian ship and event die (stage 3), progress cards (stage 4).
 An **interactive tutorial** (lobby → 🎓) teaches the mode in an offline practice game and grows with each stage.
 
 ## Sound

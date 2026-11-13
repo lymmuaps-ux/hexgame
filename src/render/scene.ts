@@ -148,6 +148,51 @@ function metroMesh(color: string, track: Track) {
   return shadow(g);
 }
 
+/** Guildlands: a knight — a shield on a round stand, gold bands for its level, a raised banner and glowing gem when active */
+function knightMesh(color: string, level: number, active: boolean) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.05, 16), std(0x3b2a17));
+  base.position.y = 0.025;
+  // shield: a rounded-bottom plate
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.1, 0.1);
+  shape.lineTo(0.1, 0.1);
+  shape.lineTo(0.1, -0.02);
+  shape.quadraticCurveTo(0.1, -0.12, 0, -0.16);
+  shape.quadraticCurveTo(-0.1, -0.12, -0.1, -0.02);
+  shape.closePath();
+  const shieldGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.035, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 1 });
+  shieldGeo.translate(0, 0, -0.0175);
+  const shieldMat = std(active ? color : new THREE.Color(color).multiplyScalar(0.55).getStyle(), { roughness: 0.45 });
+  const shield = new THREE.Mesh(shieldGeo, shieldMat);
+  shield.position.y = 0.24;
+  g.add(base, shield);
+  // gold bands across the shield: one per level
+  for (let i = 0; i < level; i++) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.022, 0.05), std(0xd4a62a, { metalness: 0.6, roughness: 0.3 }));
+    band.position.set(0, 0.31 - i * 0.045, 0);
+    g.add(band);
+  }
+  // gem: glows while the knight is active
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), new THREE.MeshStandardMaterial({
+    color: active ? 0x7ff5ff : 0x5c6670, emissive: active ? 0x2fd8ff : 0x000000, emissiveIntensity: active ? 1.4 : 0, roughness: 0.3,
+  }));
+  gem.position.set(0, 0.17, 0.04);
+  // spear with a banner: raised when active, lowered when resting
+  const spear = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.42, 6), std(0x6d4c2f));
+  pole.position.y = 0.21;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 6), std(0xcfd4da, { metalness: 0.7, roughness: 0.3 }));
+  tip.position.y = 0.45;
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.006), std(color));
+  banner.position.set(0.055, 0.38, 0);
+  spear.add(pole, tip, banner);
+  spear.position.set(0.13, 0.04, 0);
+  spear.rotation.z = active ? 0 : -1.1;
+  g.add(gem, spear);
+  return shadow(g);
+}
+
 function roadMesh(color: string) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(HEX_SIZE * 0.66, 0.07, 0.085), std(color, { roughness: 0.5 }));
   m.position.y = 0.035;
@@ -562,6 +607,18 @@ export class BoardView {
         m.userData.color = color;
         m.position.set(vx.x, 0.2, vx.z);
         m.rotation.y = Number(v) * 1.3;
+        return m;
+      });
+    }
+    for (const [v, k] of Object.entries(s.knights ?? {})) {
+      const vx = GEO.vertices[Number(v)];
+      const color = s.players[k.owner].color;
+      want.set(`k${v}${k.owner}l${k.level}${k.active ? 'a' : 'i'}`, () => {
+        const m = knightMesh(color, k.level, k.active);
+        m.userData.color = color;
+        m.position.set(vx.x, 0.2, vx.z);
+        // face outward from the island centre
+        m.rotation.y = -Math.atan2(vx.z, vx.x) + Math.PI / 2;
         return m;
       });
     }

@@ -1,5 +1,5 @@
 // Plays many random games headlessly to exercise the rules engine.
-import { applyAction, createGame, validCitySpots, validRoadSpots, validSettlementSpots, validRaiderHexes, tradeRates, validWallSpots, goodsRate } from '../src/game/rules';
+import { applyAction, createGame, validCitySpots, validRoadSpots, validSettlementSpots, validRaiderHexes, tradeRates, validWallSpots, goodsRate, validKnightSpots, knightMoves, readyKnights } from '../src/game/rules';
 import { Action, GameState, RESOURCES, totalRes, emptyRes, isGood, GOODS, TRACKS, TRACK_INFO, emptyGoods, improveCost } from '../src/game/types';
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -48,6 +48,17 @@ function choose(s: GameState): { p: number; a: Action } {
     for (const tr of TRACKS) if ((me.goods?.[TRACK_INFO[tr].good] ?? 0) >= improveCost(me.levels![tr])) opts.push({ type: 'improve', track: tr }, { type: 'improve', track: tr });
     const w = validWallSpots(s, p);
     if (w.length && me.hand.clay >= 2) opts.push({ type: 'buildWall', vertex: pick(w) });
+    // knights
+    const ks = validKnightSpots(s, p);
+    if (ks.length && me.hand.wool >= 1 && me.hand.ore >= 1) opts.push({ type: 'buildKnight', vertex: pick(ks) });
+    const mine = Object.entries(s.knights ?? {}).filter(([, k]) => k.owner === p).map(([v]) => Number(v));
+    if (mine.length && me.hand.grain >= 1) opts.push({ type: 'activateKnight', vertex: pick(mine) });
+    if (mine.length && me.hand.wool >= 1 && me.hand.ore >= 1) opts.push({ type: 'promoteKnight', vertex: pick(mine) });
+    for (const v of readyKnights(s, p)) {
+      const to = knightMoves(s, v);
+      if (to.length) opts.push({ type: 'moveKnight', from: v, to: pick(to) });
+      opts.push({ type: 'chaseRaider', vertex: v });
+    }
     const g = GOODS.find((k) => (me.goods?.[k] ?? 0) >= goodsRate(s, p));
     if (g) opts.push({ type: 'bankTrade', give: g, get: pick([...RESOURCES, ...GOODS].filter((x) => x !== g)) });
   }
@@ -65,7 +76,7 @@ function choose(s: GameState): { p: number; a: Action } {
   return { p, a: pick(opts) };
 }
 
-let wins = 0, totalTurns = 0, guildGames = 0, metroGames = 0, maxLevel = 0;
+let wins = 0, totalTurns = 0, guildGames = 0, metroGames = 0, maxLevel = 0, knightsSeen = 0, mightySeen = 0;
 const GAMES = 300;
 for (let g = 0; g < GAMES; g++) {
   let s = createGame(['A', 'B', 'C', 'D'].slice(0, 2 + (g % 3)), Math.random, g % 2 ? 'guilds' : 'base');
@@ -92,6 +103,12 @@ for (let g = 0; g < GAMES; g++) {
     }
     if (s.mode === 'guilds') {
       for (const pl of s.players) if (GOODS.some((k) => pl.goods![k] < 0)) throw new Error('negative goods');
+      for (const [v, k] of Object.entries(s.knights ?? {})) {
+        if (s.buildings[Number(v)]) throw new Error('knight on a building');
+        if (k.level === 3 && s.players[k.owner].levels!.politics < 3) throw new Error('level 3 knight without politics 3');
+      }
+      for (let i = 0; i < s.players.length; i++)
+        for (const lv of [1, 2, 3]) if (Object.values(s.knights ?? {}).filter((k) => k.owner === i && k.level === lv).length > 2) throw new Error('too many knights of level ' + lv);
       for (const tr of TRACKS) {
         const holders = Object.values(s.buildings).filter((b) => b.metro === tr);
         if (holders.length > 1) throw new Error('two metropolises for ' + tr);
@@ -105,6 +122,8 @@ for (let g = 0; g < GAMES; g++) {
     guildGames++;
     if (Object.values(s.metropolis!).some((x) => x !== null)) metroGames++;
     maxLevel = Math.max(maxLevel, ...s.players.flatMap((pl) => Object.values(pl.levels!)));
+    knightsSeen += Object.keys(s.knights ?? {}).length;
+    mightySeen += Object.values(s.knights ?? {}).filter((k) => k.level === 3).length;
   }
   if (s.phase === 'ended') {
     wins++;
@@ -122,4 +141,4 @@ for (let g = 0; g < GAMES; g++) {
   }
   void totalRes;
 }
-console.log(`${wins}/${GAMES} games finished, avg ${Math.round(totalTurns / wins)} turns · guildlands games: ${guildGames}, with a metropolis: ${metroGames}, max level reached: ${maxLevel}`);
+console.log(`${wins}/${GAMES} games finished, avg ${Math.round(totalTurns / wins)} turns · guildlands games: ${guildGames}, with a metropolis: ${metroGames}, max level reached: ${maxLevel}, knights on boards at the end: ${knightsSeen} (level 3: ${mightySeen})`);

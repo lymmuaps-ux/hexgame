@@ -2,7 +2,7 @@ import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import { M } from './msg';
 import {
   Action, COSTS, FxEvent, GameState, GameStats, GOODS, GOODS_INFO, GoodsMap, TRACKS, TRACK_INFO, Track,
-  emptyGoods, improveCost, isGood, winPoints, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  emptyGoods, improveCost, isGood, winPoints, KNIGHTS_PER_LEVEL, Knight, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, emptyRes, totalRes,
 } from './types';
 
@@ -40,13 +40,14 @@ const has = (hand: ResMap, cost: Partial<ResMap>) => RESOURCES.every((r) => hand
 export const canAfford = (s: GameState, p: number, what: keyof typeof COSTS) => has(s.players[p].hand, COSTS[what]);
 
 function vertexFree(s: GameState, v: number) {
-  return !s.buildings[v] && GEO.vertices[v].neighbors.every((n) => !s.buildings[n]);
+  return !s.buildings[v] && !s.knights?.[v] && GEO.vertices[v].neighbors.every((n) => !s.buildings[n]);
 }
 
 /** can player `p` extend a road through vertex v (not blocked by an opponent building)? */
 function vertexPassable(s: GameState, p: number, v: number) {
   const b = s.buildings[v];
-  return !b || b.owner === p;
+  const k = s.knights?.[v];
+  return (!b || b.owner === p) && (!k || k.owner === p);
 }
 
 export function validSettlementSpots(s: GameState, p: number): number[] {
@@ -193,6 +194,72 @@ export function validWallSpots(s: GameState, p: number) {
   const walls = Object.values(s.buildings).filter((b) => b.owner === p && b.wall).length;
   if (walls >= 3) return [];
   return ownCities(s, p).filter((v) => !s.buildings[v].wall);
+}
+
+// ----------------------------------------------------------------- knights
+
+/** knights a player has of one level */
+export function knightCount(s: GameState, p: number, level: 1 | 2 | 3) {
+  return Object.values(s.knights ?? {}).filter((k) => k.owner === p && k.level === level).length;
+}
+
+/** empty corners on a player's road network where a new knight may stand */
+export function validKnightSpots(s: GameState, p: number) {
+  if (s.mode !== 'guilds') return [];
+  return GEO.vertices
+    .filter((v) => !s.buildings[v.id] && !s.knights?.[v.id] && v.edges.some((e) => s.roads[e] === p))
+    .map((v) => v.id);
+}
+
+/** why a knight can't act now (null if it can) */
+function knightCantAct(s: GameState, k: Knight): string | null {
+  if (!k.active) return M('err.knightInactive');
+  if (k.activatedTurn === s.turnNumber) return M('err.knightJustActivated');
+  if (k.actedTurn === s.turnNumber) return M('err.knightActed');
+  return null;
+}
+
+/** corners reachable from `from` along the owner's own roads, without passing other pieces */
+function reachable(s: GameState, p: number, from: number) {
+  const seen = new Set<number>([from]);
+  const queue = [from];
+  const out: number[] = [];
+  while (queue.length) {
+    const v = queue.shift()!;
+    for (const e of GEO.vertices[v].edges) {
+      if (s.roads[e] !== p) continue;
+      const ed = GEO.edges[e];
+      const n = ed.a === v ? ed.b : ed.a;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      out.push(n);
+      // only free corners (or own buildings) can be walked through
+      const b = s.buildings[n];
+      if (!s.knights?.[n] && (!b || b.owner === p)) queue.push(n);
+    }
+  }
+  return out;
+}
+
+/** where a knight on `from` may go: empty corners, or a weaker enemy knight's corner (displace) */
+export function knightMoves(s: GameState, from: number) {
+  const k = s.knights?.[from];
+  if (!k) return [];
+  return reachable(s, k.owner, from).filter((v) => {
+    if (s.buildings[v]) return false;
+    const other = s.knights?.[v];
+    return !other || (other.owner !== k.owner && other.level < k.level);
+  });
+}
+
+/** the nearest free corner on the owner's roads for a displaced knight (null: it leaves the board) */
+function retreatSpot(s: GameState, owner: number, from: number) {
+  return reachable(s, owner, from).find((v) => !s.buildings[v] && !s.knights?.[v]) ?? null;
+}
+
+/** knights of a player that may act this turn */
+export function readyKnights(s: GameState, p: number) {
+  return Object.entries(s.knights ?? {}).filter(([, k]) => k.owner === p && !knightCantAct(s, k)).map(([v]) => Number(v));
 }
 
 /** bank rate for goods: 4:1, or 2:1 with trade level 3 */
@@ -724,6 +791,87 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       pay(s, p, COSTS.wall);
       s.buildings[a.vertex] = { ...s.buildings[a.vertex], wall: true };
       log(s, M('log.wall', { name: me.name }));
+      return;
+    }
+    case 'buildKnight': {
+      if (s.mode !== 'guilds') return M('err.unknownAction');
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (knightCount(s, p, 1) >= KNIGHTS_PER_LEVEL) return M('err.noKnights');
+      if (!canAfford(s, p, 'knight')) return M('err.notEnough');
+      if (!validKnightSpots(s, p).includes(a.vertex)) return M('err.cantKnight');
+      pay(s, p, COSTS.knight);
+      (s.knights ??= {})[a.vertex] = { owner: p, level: 1, active: false };
+      fx(s, { t: 'knight', p, act: 'build', at: a.vertex });
+      log(s, M('log.knightBuild', { name: me.name }));
+      updateLongestRoad(s); // a knight can cut an opponent's road
+      return;
+    }
+    case 'activateKnight': {
+      const k = s.knights?.[a.vertex];
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!k || k.owner !== p) return M('err.notYourKnight');
+      if (k.active) return M('err.knightActive');
+      if (!canAfford(s, p, 'activate')) return M('err.notEnough');
+      pay(s, p, COSTS.activate);
+      k.active = true;
+      k.activatedTurn = s.turnNumber;
+      fx(s, { t: 'knight', p, act: 'activate', at: a.vertex });
+      log(s, M('log.knightActivate', { name: me.name }));
+      return;
+    }
+    case 'promoteKnight': {
+      const k = s.knights?.[a.vertex];
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!k || k.owner !== p) return M('err.notYourKnight');
+      if (k.level >= 3) return M('err.knightMax');
+      if (k.level === 2 && (me.levels?.politics ?? 0) < 3) return M('err.needPolitics');
+      if (k.promotedTurn === s.turnNumber) return M('err.promotedThisTurn');
+      if (knightCount(s, p, (k.level + 1) as 2 | 3) >= KNIGHTS_PER_LEVEL) return M('err.noKnights');
+      if (!canAfford(s, p, 'promote')) return M('err.notEnough');
+      pay(s, p, COSTS.promote);
+      k.level = (k.level + 1) as 2 | 3;
+      k.promotedTurn = s.turnNumber;
+      fx(s, { t: 'knight', p, act: 'promote', at: a.vertex });
+      log(s, M('log.knightPromote', { name: me.name, n: k.level }));
+      return;
+    }
+    case 'moveKnight': {
+      const k = s.knights?.[a.from];
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!k || k.owner !== p) return M('err.notYourKnight');
+      const why = knightCantAct(s, k);
+      if (why) return why;
+      const targets = knightMoves(s, a.from);
+      if (!targets.includes(a.to)) return M('err.cantMoveKnight');
+      const victim = s.knights![a.to];
+      delete s.knights![a.from];
+      if (victim) {
+        // displace: the weaker knight retreats along its owner's roads, or leaves the board
+        const retreat = retreatSpot(s, victim.owner, a.to);
+        delete s.knights![a.to];
+        if (retreat !== null) s.knights![retreat] = victim;
+        fx(s, { t: 'knight', p, act: 'displace', at: a.from, to: a.to });
+        log(s, M(retreat === null ? 'log.knightRouted' : 'log.knightDisplace', { name: me.name, victim: s.players[victim.owner].name }));
+      } else {
+        fx(s, { t: 'knight', p, act: 'move', at: a.from, to: a.to });
+        log(s, M('log.knightMove', { name: me.name }));
+      }
+      s.knights![a.to] = { ...k, active: false, actedTurn: s.turnNumber };
+      updateLongestRoad(s);
+      return;
+    }
+    case 'chaseRaider': {
+      const k = s.knights?.[a.vertex];
+      if (s.stage !== 'actions') return M('err.cantBuild');
+      if (!k || k.owner !== p) return M('err.notYourKnight');
+      const why = knightCantAct(s, k);
+      if (why) return why;
+      if (!GEO.hexVertices[s.raider].includes(a.vertex)) return M('err.notNextToRaider');
+      k.active = false;
+      k.actedTurn = s.turnNumber;
+      fx(s, { t: 'knight', p, act: 'chase', at: a.vertex });
+      log(s, M('log.knightChase', { name: me.name }));
+      startRaider(s, 'actions');
       return;
     }
     case 'endTurn': {

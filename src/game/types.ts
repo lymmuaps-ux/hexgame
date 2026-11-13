@@ -53,6 +53,9 @@ export const COSTS = {
   city: { grain: 2, ore: 3 },
   dev: { wool: 1, grain: 1, ore: 1 },
   wall: { clay: 2 },
+  knight: { wool: 1, ore: 1 },
+  promote: { wool: 1, ore: 1 },
+  activate: { grain: 1 },
 } satisfies Record<string, Partial<ResMap>>;
 
 export type PortType = Resource | 'any';
@@ -131,7 +134,24 @@ export type FxEvent =
   | { t: 'buyDev'; p: number }
   | { t: 'playDev'; p: number; card: DevCard }
   | { t: 'metro'; track: Track; from: number | null; to: number }
-  | { t: 'improve'; p: number; track: Track; level: number };
+  | { t: 'improve'; p: number; track: Track; level: number }
+  | { t: 'knight'; p: number; act: KnightAct; at: number; to?: number };
+
+export type KnightAct = 'build' | 'activate' | 'promote' | 'move' | 'displace' | 'chase';
+
+/** Guildlands: a knight standing on a corner */
+export interface Knight {
+  owner: number;
+  level: 1 | 2 | 3;
+  active: boolean;
+  /** turn numbers, so each knight acts / is promoted at most once per turn */
+  activatedTurn?: number;
+  actedTurn?: number;
+  promotedTurn?: number;
+}
+
+/** each player owns 2 knights of each level */
+export const KNIGHTS_PER_LEVEL = 2;
 
 export interface PlayerStats {
   /** resources received from dice rolls (and the second setup settlement) */
@@ -189,6 +209,8 @@ export interface GameState {
   metropolis?: Record<Track, number | null>;
   /** Guildlands: players with science level 3+ who may take a resource after a roll that gave them nothing */
   aqueduct?: number[];
+  /** Guildlands: knights on corners (vertex id -> knight) */
+  knights?: Record<number, Knight>;
   /** numbers collected for the post-game recap */
   stats?: GameStats;
   /** in-game chat (added by the host outside the rules) */
@@ -218,6 +240,11 @@ export type Action =
   | { type: 'improve'; track: Track }
   | { type: 'buildWall'; vertex: number }
   | { type: 'aqueduct'; res: Resource }
+  | { type: 'buildKnight'; vertex: number }
+  | { type: 'activateKnight'; vertex: number }
+  | { type: 'promoteKnight'; vertex: number }
+  | { type: 'moveKnight'; from: number; to: number }
+  | { type: 'chaseRaider'; vertex: number }
   | { type: 'moveRaider'; hex: number }
   | { type: 'steal'; target: number }
   | { type: 'buildRoad'; edge: number }
