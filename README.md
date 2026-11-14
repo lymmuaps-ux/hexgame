@@ -102,18 +102,15 @@ At the start every player rolls two dice; the highest total goes first (ties rol
 the table from that player and back in reverse, and the game continues in the same order.
 
 ## Bots
-Short a player? The host can add up to three computer players in the lobby (🤖 **Easy**, **Normal** or **Hard**), in
-both modes and mixed with friends. Bots think on the host's browser and play at a human pace, so everyone can follow.
+Short a player? The host can add up to three computer players in the lobby with 🤖 **Add a bot**, in both modes
+and mixed with friends. There is one level: hard. Bots think on the host's browser and play at a human pace, so everyone can follow.
 For every move they simulate each legal option with the real rules engine and score the resulting position: points,
 dice odds and resource variety, scarce resources, harbours, room to expand, how close the hand is to the next build,
 the risk of a 7, road and army races and, in Guildlands, goods, city improvements, knights and barbarian defence.
-They plan bank and harbour trades towards a build, place their first settlements carefully, aim the Raider at the
-leader, offer and answer trades (and never help someone who is about to win), and play their cards.
-- **Easy** makes deliberate mistakes and doesn't trade with players.
-- **Normal** plays solidly and looks two bank trades ahead.
-- **Hard** looks up to four trades ahead and is pickier about deals with whoever is leading.
+They plan up to four bank and harbour trades towards a build, place their first settlements carefully, aim the Raider
+at the leader, offer and answer trades (and never help someone who is about to win), and play their cards.
 
-`npx tsx scripts/bots.ts 40 base hard,easy,easy,easy` runs a bot tournament and prints the win rates.
+`npx tsx scripts/bots.ts 40 base` plays bot-only games and checks they all finish.
 
 ## Rules summary
 First to **10 points** wins. Settlements are worth 1 point and cities 2. Longest Road (5+) and Strongest Guard (3+ Guards)

@@ -1,12 +1,12 @@
 import { applyAction, createGame, forceNextEvent } from '../game/rules';
 import { Action, EventFace, GameMode, GameState, MAX_PLAYERS } from '../game/types';
 import { M } from '../game/msg';
-import { BOT_NAMES, BotLevel, decide, fallback } from '../game/ai';
+import { BOT_NAMES, decide, fallback } from '../game/ai';
 import { Link, getTransport } from './transport';
 
 export interface LobbyInfo {
   code: string;
-  players: { name: string; connected: boolean; bot?: BotLevel }[];
+  players: { name: string; connected: boolean; bot?: boolean | string }[];
   started: boolean;
   spectators?: string[];
   mode?: GameMode;
@@ -61,7 +61,7 @@ export interface Session {
   /** host only, before the game starts */
   setMode?(m: GameMode): void;
   /** host only, before the game starts: computer players */
-  addBot?(level: BotLevel): void;
+  addBot?(): void;
   removeBot?(seat: number): void;
 }
 
@@ -85,7 +85,7 @@ export function newRoomCode() {
 }
 
 const SAVE_KEY = 'hexhold-hosted-game';
-interface SavedHost { code: string; seats: { name: string; clientId: string; bot?: BotLevel }[]; state: GameState | null }
+interface SavedHost { code: string; seats: { name: string; clientId: string; bot?: boolean | string }[]; state: GameState | null }
 
 export function loadSavedHost(): SavedHost | null {
   try {
@@ -103,7 +103,7 @@ export function clearSavedHost() {
 
 export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHost): Promise<Session> {
   const code = resume?.code ?? newRoomCode();
-  const seats: { name: string; clientId: string; link: Link | null; bot?: BotLevel }[] = resume
+  const seats: { name: string; clientId: string; link: Link | null; bot?: boolean | string }[] = resume
     ? resume.seats.map((s, i) => ({ ...s, link: null, clientId: i === 0 ? clientId() : s.clientId }))
     : [{ name, clientId: clientId(), link: null }];
   let state: GameState | null = resume?.state ?? null;
@@ -198,7 +198,7 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     // answers (discards, trades) before the player whose turn it is
     const order = seats.map((_, i) => i).filter((i) => seats[i].bot).sort((a, b) => (a === s.current ? 1 : 0) - (b === s.current ? 1 : 0));
     for (const i of order) {
-      if (decide(s, i, seats[i].bot!, Math.random, 0) === null && !(s.trade?.from === i)) continue;
+      if (decide(s, i) === null && !(s.trade?.from === i)) continue;
       // give people time to watch the dice, and to read a new offer
       const rolled = (s.rollId ?? 0) !== lastRoll;
       const delay = s.phase === 'order' ? 900 : rolled ? 2300 : s.trade?.from === i ? 1500 : 700 + Math.random() * 600;
@@ -214,13 +214,12 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
       if (!state) return;
       lastRoll = state.rollId ?? 0;
       const seat = next.seat;
-      const level = seats[seat]?.bot;
-      if (!level) return;
+      if (!seats[seat]?.bot) return;
       const tr = state.trade;
       if (tr?.from === seat && !offerSince.has(tr.id)) offerSince.set(tr.id, Date.now());
       const age = tr?.from === seat ? Date.now() - (offerSince.get(tr.id) ?? Date.now()) : 0;
       let a: Action | null = null;
-      try { a = decide(state, seat, level, Math.random, age); } catch (e) { console.warn('bot error', e); }
+      try { a = decide(state, seat, age); } catch (e) { console.warn('bot error', e); }
       let r = a ? applyAction(state, seat, a) : null;
       if (!r?.ok) {
         const fb = fallback(state, seat);
@@ -304,12 +303,12 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     voice: (chunk) => voice(0, chunk),
     react: (r) => react(0, r),
     presence: (pr) => presence(0, pr),
-    addBot: (level) => {
+    addBot: () => {
       if (state || seats.length >= MAX_PLAYERS) return;
       const used = new Set(seats.map((s) => s.name));
       const pick = BOT_NAMES.filter((n) => !used.has(`🤖 ${n}`));
       const nm = `🤖 ${pick[Math.floor(Math.random() * pick.length)] ?? 'Bot'}`;
-      seats.push({ name: nm, clientId: `bot-${Math.random().toString(36).slice(2, 8)}`, link: null, bot: level });
+      seats.push({ name: nm, clientId: `bot-${Math.random().toString(36).slice(2, 8)}`, link: null, bot: true });
       publish();
     },
     removeBot: (i) => {

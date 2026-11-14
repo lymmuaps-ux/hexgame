@@ -16,7 +16,6 @@ import {
  * the hand is to the next build, room to expand, road and army races, the risk of a 7,
  * and in Guildlands goods, city improvements and barbarian defence.
  */
-export type BotLevel = 'easy' | 'normal' | 'hard';
 
 const PIPS = (n: number | null) => (n ? 6 - Math.abs(7 - n) : 0);
 
@@ -214,7 +213,7 @@ function tryAction(s: GameState, p: number, a: Action): GameState | null {
   return r.ok ? r.state : null;
 }
 
-function bestOf(s: GameState, p: number, cands: Action[], level: BotLevel, rng: () => number): { a: Action; gain: number } | null {
+function bestOf(s: GameState, p: number, cands: Action[]): { a: Action; gain: number } | null {
   const base = lite(s);
   const c = ctxFor(base);
   const v0 = evaluate(base, p, c);
@@ -226,12 +225,6 @@ function bestOf(s: GameState, p: number, cands: Action[], level: BotLevel, rng: 
   }
   if (!scored.length) return null;
   scored.sort((x, y) => y.gain - x.gain);
-  // easy bots often pick a worse (but still positive) move, normal bots now and then
-  const slip = level === 'easy' ? 0.45 : level === 'normal' ? 0.35 : 0;
-  if (rng() < slip) {
-    const ok = scored.filter((x) => x.gain > 0).slice(0, level === 'normal' ? 4 : undefined);
-    if (ok.length) return ok[Math.floor(rng() * ok.length)];
-  }
   return scored[0];
 }
 
@@ -435,7 +428,7 @@ function runPlan(s: GameState, p: number, plan: Action[]): GameState | null {
 
 // ------------------------------------------------------------- candidate moves
 
-function actionCandidates(s: GameState, p: number, level: BotLevel): Action[] {
+function actionCandidates(s: GameState, p: number): Action[] {
   const pl = s.players[p];
   const out: Action[] = [];
   if (canAfford(s, p, 'city') && pl.citiesLeft > 0) for (const v of validCitySpots(s, p)) out.push({ type: 'buildCity', vertex: v });
@@ -480,7 +473,6 @@ function actionCandidates(s: GameState, p: number, level: BotLevel): Action[] {
     }
     for (const card of new Set(pl.progress ?? [])) out.push(...progressChoices(s, p, card));
   }
-  void level;
   return out;
 }
 
@@ -517,17 +509,17 @@ function tradeOffer(s: GameState, p: number): Action | null {
 }
 
 /** answer someone else's offer */
-function answerTrade(s: GameState, p: number, level: BotLevel): Action {
+function answerTrade(s: GameState, p: number): Action {
   const t = s.trade!;
   const fromVp = victoryPoints(s, t.from, false);
-  // never feed someone who is about to win (hard and normal bots)
-  if (level !== 'easy' && fromVp >= winPoints(s) - 2) return { type: 'declineTrade', id: t.id };
+  // never feed someone who is about to win
+  if (fromVp >= winPoints(s) - 2) return { type: 'declineTrade', id: t.id };
   const next = tryAction(lite(s), p, { type: 'acceptTrade', id: t.id });
   if (!next) return { type: 'declineTrade', id: t.id };
   const c = ctxFor(s);
   const gain = evaluate(next, p, c) - evaluate(lite(s), p, c);
   // a hard bot also wants the deal to help itself more than the leader
-  const margin = level === 'hard' ? 4 + (fromVp >= winPoints(s) - 4 ? 8 : 0) : 1;
+  const margin = 4 + (fromVp >= winPoints(s) - 4 ? 8 : 0);
   return gain > margin ? { type: 'acceptTrade', id: t.id } : { type: 'declineTrade', id: t.id };
 }
 
@@ -539,7 +531,7 @@ const offeredOnTurn = new Map<number, number>();
  * The next action for bot seat `p`, or null if it has nothing to do right now.
  * `ownOfferAge` (ms) lets the host withdraw a bot's offer nobody answered.
  */
-export function decide(s: GameState, p: number, level: BotLevel, rng: () => number = Math.random, ownOfferAge = 0): Action | null {
+export function decide(s: GameState, p: number, ownOfferAge = 0): Action | null {
   if (s.phase === 'ended') return null;
   const pl = s.players[p];
   if (!pl) return null;
@@ -550,7 +542,7 @@ export function decide(s: GameState, p: number, level: BotLevel, rng: () => numb
   }
   if (s.stage === 'discard' && s.pendingDiscards[p]) return discardChoice(s, p, s.pendingDiscards[p]);
   if (s.aqueduct?.includes(p)) return { type: 'aqueduct', res: mostNeeded(s, p) };
-  if (s.trade && s.trade.from !== p && !s.trade.declined.includes(p)) return answerTrade(s, p, level);
+  if (s.trade && s.trade.from !== p && !s.trade.declined.includes(p)) return answerTrade(s, p);
   if (s.current !== p) return null;
 
   if (s.phase === 'setup') {
@@ -561,7 +553,7 @@ export function decide(s: GameState, p: number, level: BotLevel, rng: () => numb
   switch (s.stage) {
     case 'roll': {
       // before rolling: choose the dice, or send a knight away from our own tile
-      if (s.mode === 'guilds' && pl.progress?.includes('weightedDice') && level !== 'easy') return { type: 'playProgress', card: 'weightedDice', dice: bestDice(s, p) };
+      if (s.mode === 'guilds' && pl.progress?.includes('weightedDice')) return { type: 'playProgress', card: 'weightedDice', dice: bestDice(s, p) };
       if (s.mode !== 'guilds' && !s.devPlayedThisTurn && pl.dev.includes('guard')) {
         const blocked = GEO.hexVertices[s.raider].some((v) => s.buildings[v]?.owner === p);
         const armyRace = pl.guards >= 2 && s.strongestGuard.owner !== p;
@@ -569,7 +561,7 @@ export function decide(s: GameState, p: number, level: BotLevel, rng: () => numb
       }
       return { type: 'roll' };
     }
-    case 'moveRaider': return { type: 'moveRaider', hex: level === 'easy' && rng() < 0.4 ? validRaiderHexes(s)[Math.floor(rng() * validRaiderHexes(s).length)] : bestRaiderHex(s, p) };
+    case 'moveRaider': return { type: 'moveRaider', hex: bestRaiderHex(s, p) };
     case 'steal': {
       const vps = s.stealFrom.map((i) => victoryPoints(s, i, false) * 10 + handSize(s.players[i]));
       return { type: 'steal', target: s.stealFrom[vps.indexOf(Math.max(...vps))] };
@@ -590,9 +582,9 @@ export function decide(s: GameState, p: number, level: BotLevel, rng: () => numb
     return everyoneSaidNo || ownOfferAge > 6000 ? { type: 'cancelTrade' } : null;
   }
 
-  const best = bestOf(s, p, actionCandidates(s, p, level), level, rng);
-  // compare with trading towards a build (hard bots look further ahead)
-  const maxTrades = level === 'hard' ? 4 : level === 'normal' ? 2 : 1;
+  const best = bestOf(s, p, actionCandidates(s, p));
+  // compare with trading towards a build (up to four trades ahead)
+  const maxTrades = 4;
   const base = lite(s);
   const c = ctxFor(base);
   const v0 = evaluate(base, p, c);
@@ -603,12 +595,12 @@ export function decide(s: GameState, p: number, level: BotLevel, rng: () => numb
     const gain = evaluate(end, p, c) - v0;
     if (!plan || gain > plan.gain) plan = { a: pl[0], gain };
   }
-  const threshold = level === 'easy' ? 2 : 0.5;
+  const threshold = 0.5;
   if (plan && plan.gain > threshold && (!best || plan.gain > best.gain)) return plan.a;
   if (best && best.gain > threshold) return best.a;
 
   // nothing good to do alone: try a trade with the table once per turn
-  if (level !== 'easy' && offeredOnTurn.get(p) !== s.turnNumber) {
+  if (offeredOnTurn.get(p) !== s.turnNumber) {
     offeredOnTurn.set(p, s.turnNumber);
     const offer = tradeOffer(s, p);
     if (offer) return offer;

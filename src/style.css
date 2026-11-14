@@ -733,11 +733,6 @@ table.stats tr.sum td, table.stats tr.sum th { font-weight: 800; color: var(--in
 
 /* computer players in the lobby */
 .addbots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 14px; font-size: 0.9em; }
-.addbots span { opacity: 0.8; margin-inline-end: 4px; }
-.addbots button { padding: 5px 12px; border-radius: 999px; font-size: 0.9em; }
-.botlv { margin-inline-start: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.75em; font-weight: 700; color: #fff; background: #7cb342; vertical-align: 1px; }
-.botlv.normal, .botadd.normal { --bc: #fb8c00; } .botlv.normal { background: #fb8c00; }
-.botlv.hard { background: #c62828; }
-.botadd.easy { border-color: #7cb342; } .botadd.normal { border-color: #fb8c00; } .botadd.hard { border-color: #c62828; }
+.addbots button { padding: 6px 16px; border-radius: 999px; }
 .botx { float: inline-end; padding: 0 8px; min-height: 0; line-height: 1.6; background: transparent; border: none; opacity: 0.6; }
 .botx:hover { opacity: 1; }

@@ -1,12 +1,12 @@
-// Bot tournament: plays bot-only games and reports win rates per level.
-// Usage: npx tsx scripts/bots.ts [games] [base|guilds] [levels,comma,separated]
+// Bot self-play: plays bot-only games and checks they always finish.
+// Usage: npx tsx scripts/bots.ts [games] [base|guilds] [players]
 import { applyAction, createGame, victoryPoints } from '../src/game/rules';
-import { decide, fallback, BotLevel } from '../src/game/ai';
+import { decide, fallback } from '../src/game/ai';
 import { GameState } from '../src/game/types';
 
 const games = Number(process.argv[2] ?? 20);
 const mode = (process.argv[3] ?? 'base') as 'base' | 'guilds';
-const levels = (process.argv[4] ?? 'hard,normal,easy,easy').split(',') as BotLevel[];
+const levels = Array.from({ length: Number(process.argv[4] ?? 4) }, (_, i) => `bot${i}`);
 
 const wins: Record<string, number> = {};
 let stuck = 0, totalTurns = 0, slowest = 0, refused = 0;
@@ -24,7 +24,7 @@ for (let g = 0; g < games; g++) {
     for (const p of order) {
       const t0 = performance.now();
       const age = s.trade?.from === p ? (steps - (offerAt.get(s.trade.id) ?? steps)) * 1000 : 0;
-      let a = decide(s, p, seatLv[p], Math.random, age);
+      let a = decide(s, p, age);
       slowest = Math.max(slowest, performance.now() - t0);
       if (!a) continue;
       let r = applyAction(s, p, a, Math.random);

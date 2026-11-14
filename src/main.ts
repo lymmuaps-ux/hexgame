@@ -167,8 +167,8 @@ function renderWaiting(l: LobbyInfo) {
           <b>${t(`mode.${m}`)}</b><small>${t(`mode.${m}.sub`)}</small></button>`).join('')}</div>
         ${session.isHost ? '' : `<p class="hint">${t('mode.hostPicks')}</p>`}
         <h3>${t('lobby.players', { n: l.players.length })}</h3>
-        <ul class="plist">${l.players.map((p, i) => `<li><span class="dot" style="--pc:${['#e53935', '#1e88e5', '#f5f5f5', '#fb8c00'][i]}"></span>${esc(p.name)}${i === 0 ? ' 👑' : ''}${i === session!.seat ? ` ${t('hud.you')}` : ''}${p.bot ? `<span class="botlv ${p.bot}">${t(`bot.${p.bot}`)}</span>${session!.isHost ? `<button class="botx" data-rm="${i}" title="${t('bot.remove')}">✕</button>` : ''}` : ''}</li>`).join('')}</ul>
-        ${session.isHost && l.players.length < 4 ? `<div class="addbots"><span>${t('bot.add')}</span>${(['easy', 'normal', 'hard'] as const).map((lv) => `<button class="botadd ${lv}" data-lv="${lv}">${t(`bot.${lv}`)}</button>`).join('')}</div>` : ''}
+        <ul class="plist">${l.players.map((p, i) => `<li><span class="dot" style="--pc:${['#e53935', '#1e88e5', '#f5f5f5', '#fb8c00'][i]}"></span>${esc(p.name)}${i === 0 ? ' 👑' : ''}${i === session!.seat ? ` ${t('hud.you')}` : ''}${p.bot ? `${session!.isHost ? `<button class="botx" data-rm="${i}" title="${t('bot.remove')}">✕</button>` : ''}` : ''}</li>`).join('')}</ul>
+        ${session.isHost && l.players.length < 4 ? `<div class="addbots"><button class="botadd">${t('bot.add')}</button></div>` : ''}
         ${session.isHost
           ? `<button id="start" class="primary" ${l.players.length < 2 ? 'disabled' : ''}>${t('lobby.start')}</button>
              <p class="hint">${l.players.length < 2 ? t('lobby.needFriendOrBot') : t('lobby.ready')}</p>`
@@ -180,7 +180,7 @@ function renderWaiting(l: LobbyInfo) {
   bindLang();
   app.querySelector('#start')?.addEventListener('click', () => session?.start?.());
   app.querySelectorAll<HTMLElement>('.modebtn').forEach((b) => b.addEventListener('click', () => session?.setMode?.(b.dataset.mode as 'base' | 'guilds')));
-  app.querySelectorAll<HTMLElement>('.botadd').forEach((b) => b.addEventListener('click', () => session?.addBot?.(b.dataset.lv as 'easy' | 'normal' | 'hard')));
+  app.querySelectorAll<HTMLElement>('.botadd').forEach((b) => b.addEventListener('click', () => session?.addBot?.()));
   app.querySelectorAll<HTMLElement>('.botx').forEach((b) => b.addEventListener('click', () => session?.removeBot?.(Number(b.dataset.rm))));
 }
 
