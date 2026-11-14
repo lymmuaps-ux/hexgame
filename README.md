@@ -101,6 +101,20 @@ HTTPS (all of those do), because WebRTC requires it.
 At the start every player rolls two dice; the highest total goes first (ties roll again). Setup then goes around
 the table from that player and back in reverse, and the game continues in the same order.
 
+## Bots
+Short a player? The host can add up to three computer players in the lobby (🤖 **Easy**, **Normal** or **Hard**), in
+both modes and mixed with friends. Bots think on the host's browser and play at a human pace, so everyone can follow.
+For every move they simulate each legal option with the real rules engine and score the resulting position: points,
+dice odds and resource variety, scarce resources, harbours, room to expand, how close the hand is to the next build,
+the risk of a 7, road and army races and, in Guildlands, goods, city improvements, knights and barbarian defence.
+They plan bank and harbour trades towards a build, place their first settlements carefully, aim the Raider at the
+leader, offer and answer trades (and never help someone who is about to win), and play their cards.
+- **Easy** makes deliberate mistakes and doesn't trade with players.
+- **Normal** plays solidly and looks two bank trades ahead.
+- **Hard** looks up to four trades ahead and is pickier about deals with whoever is leading.
+
+`npx tsx scripts/bots.ts 40 base hard,easy,easy,easy` runs a bot tournament and prints the win rates.
+
 ## Rules summary
 First to **10 points** wins. Settlements are worth 1 point and cities 2. Longest Road (5+) and Strongest Guard (3+ Guards)
 are worth 2 each, and Monument cards 1 each. Roll the dice and tiles with that number produce resources. A 7 wakes the Raider:
@@ -113,6 +127,7 @@ or make offers to the other players. Press **?** in game for the full rules.
 | `src/game/types.ts` | state, actions, costs |
 | `src/game/board.ts` | hex/vertex/edge geometry, random board generation |
 | `src/game/rules.ts` | the rules engine (pure reducer, runs on the host) |
+| `src/game/ai.ts` | the bots: position evaluation and move search |
 | `src/net/` | MQTT relay (default), PeerJS and BroadcastChannel transports; host & client sessions |
 | `src/render/scene.ts` | three.js island, pieces, click targets |
 | `src/render/tiles.ts` | detailed terrain tiles (forests, windmills, mountains, mines, oasis…) |

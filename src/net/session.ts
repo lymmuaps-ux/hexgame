@@ -1,11 +1,12 @@
 import { applyAction, createGame, forceNextEvent } from '../game/rules';
 import { Action, EventFace, GameMode, GameState, MAX_PLAYERS } from '../game/types';
 import { M } from '../game/msg';
+import { BOT_NAMES, BotLevel, decide, fallback } from '../game/ai';
 import { Link, getTransport } from './transport';
 
 export interface LobbyInfo {
   code: string;
-  players: { name: string; connected: boolean }[];
+  players: { name: string; connected: boolean; bot?: BotLevel }[];
   started: boolean;
   spectators?: string[];
   mode?: GameMode;
@@ -59,6 +60,9 @@ export interface Session {
   start?(): void;
   /** host only, before the game starts */
   setMode?(m: GameMode): void;
+  /** host only, before the game starts: computer players */
+  addBot?(level: BotLevel): void;
+  removeBot?(seat: number): void;
 }
 
 export function clientId(): string {
@@ -81,7 +85,7 @@ export function newRoomCode() {
 }
 
 const SAVE_KEY = 'hexhold-hosted-game';
-interface SavedHost { code: string; seats: { name: string; clientId: string }[]; state: GameState | null }
+interface SavedHost { code: string; seats: { name: string; clientId: string; bot?: BotLevel }[]; state: GameState | null }
 
 export function loadSavedHost(): SavedHost | null {
   try {
@@ -99,7 +103,7 @@ export function clearSavedHost() {
 
 export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHost): Promise<Session> {
   const code = resume?.code ?? newRoomCode();
-  const seats: { name: string; clientId: string; link: Link | null }[] = resume
+  const seats: { name: string; clientId: string; link: Link | null; bot?: BotLevel }[] = resume
     ? resume.seats.map((s, i) => ({ ...s, link: null, clientId: i === 0 ? clientId() : s.clientId }))
     : [{ name, clientId: clientId(), link: null }];
   let state: GameState | null = resume?.state ?? null;
@@ -109,14 +113,14 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
 
   const lobby = (): LobbyInfo => ({
     code,
-    players: seats.map((s, i) => ({ name: s.name, connected: i === 0 || !!s.link })),
+    players: seats.map((s, i) => ({ name: s.name, connected: i === 0 || !!s.link || !!s.bot, bot: s.bot })),
     started: !!state,
     mode,
     spectators: spectators.filter((x) => x.link).map((x) => x.name),
   });
   const save = () => {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ code, seats: seats.map(({ name, clientId }) => ({ name, clientId })), state }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ code, seats: seats.map(({ name, clientId, bot }) => ({ name, clientId, bot })), state }));
     } catch { /* storage unavailable */ }
   };
   let version = 0;
@@ -126,13 +130,14 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
   };
   const publish = () => {
     if (state) {
-      state.players.forEach((p, i) => (p.connected = i === 0 || !!seats[i]?.link));
+      state.players.forEach((p, i) => (p.connected = i === 0 || !!seats[i]?.link || !!seats[i]?.bot));
       state.spectators = spectators.filter((x) => x.link).map((x) => x.name);
     }
     save();
     const l = lobby();
     broadcast({ t: 'lobby', lobby: l });
     ev.onLobby(l);
+    scheduleBots();
     if (state) {
       broadcast({ t: 'state', state, v: ++version });
       ev.onState(state);
@@ -183,13 +188,58 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     publish();
   };
 
+  // ---- computer players: they think on this (the host's) browser, at a human pace
+  let botTimer = 0;
+  let lastRoll = -1;
+  const offerSince = new Map<number, number>();
+  const botMove = (): { seat: number; delay: number } | null => {
+    if (!state || state.phase === 'ended') return null;
+    const s = state;
+    // answers (discards, trades) before the player whose turn it is
+    const order = seats.map((_, i) => i).filter((i) => seats[i].bot).sort((a, b) => (a === s.current ? 1 : 0) - (b === s.current ? 1 : 0));
+    for (const i of order) {
+      if (decide(s, i, seats[i].bot!, Math.random, 0) === null && !(s.trade?.from === i)) continue;
+      // give people time to watch the dice, and to read a new offer
+      const rolled = (s.rollId ?? 0) !== lastRoll;
+      const delay = s.phase === 'order' ? 900 : rolled ? 2300 : s.trade?.from === i ? 1500 : 700 + Math.random() * 600;
+      return { seat: i, delay };
+    }
+    return null;
+  };
+  function scheduleBots() {
+    clearTimeout(botTimer);
+    const next = botMove();
+    if (!next) return;
+    botTimer = window.setTimeout(() => {
+      if (!state) return;
+      lastRoll = state.rollId ?? 0;
+      const seat = next.seat;
+      const level = seats[seat]?.bot;
+      if (!level) return;
+      const tr = state.trade;
+      if (tr?.from === seat && !offerSince.has(tr.id)) offerSince.set(tr.id, Date.now());
+      const age = tr?.from === seat ? Date.now() - (offerSince.get(tr.id) ?? Date.now()) : 0;
+      let a: Action | null = null;
+      try { a = decide(state, seat, level, Math.random, age); } catch (e) { console.warn('bot error', e); }
+      let r = a ? applyAction(state, seat, a) : null;
+      if (!r?.ok) {
+        const fb = fallback(state, seat);
+        r = fb ? applyAction(state, seat, fb) : null;
+      }
+      if (r?.ok) {
+        state = r.state;
+        publish();
+      } else scheduleBots(); // waiting (e.g. on answers to its offer): look again soon
+    }, next.delay);
+  }
+
   await getTransport().host(code, (link) => {
     let seat: number | null = null; // not joined yet
     link.onMessage((m: ClientMsg) => {
       if (m.t === 'join') {
         const nm = String(m.name).trim().slice(0, 16) || 'Player';
-        let idx = seats.findIndex((s, i) => i > 0 && s.clientId === m.clientId);
-        if (idx < 0) idx = seats.findIndex((s, i) => i > 0 && !s.link && s.name.toLowerCase() === nm.toLowerCase());
+        let idx = seats.findIndex((s, i) => i > 0 && !s.bot && s.clientId === m.clientId);
+        if (idx < 0) idx = seats.findIndex((s, i) => i > 0 && !s.bot && !s.link && s.name.toLowerCase() === nm.toLowerCase());
         if (idx < 0 && (state || seats.length >= MAX_PLAYERS)) {
           // game already running (or full): join as a spectator
           let sp = spectators.find((x) => x.clientId === m.clientId);
@@ -254,6 +304,19 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
     voice: (chunk) => voice(0, chunk),
     react: (r) => react(0, r),
     presence: (pr) => presence(0, pr),
+    addBot: (level) => {
+      if (state || seats.length >= MAX_PLAYERS) return;
+      const used = new Set(seats.map((s) => s.name));
+      const pick = BOT_NAMES.filter((n) => !used.has(`🤖 ${n}`));
+      const nm = `🤖 ${pick[Math.floor(Math.random() * pick.length)] ?? 'Bot'}`;
+      seats.push({ name: nm, clientId: `bot-${Math.random().toString(36).slice(2, 8)}`, link: null, bot: level });
+      publish();
+    },
+    removeBot: (i) => {
+      if (state || !seats[i]?.bot) return;
+      seats.splice(i, 1);
+      publish();
+    },
     setMode: (m) => {
       if (state) return;
       mode = m;
