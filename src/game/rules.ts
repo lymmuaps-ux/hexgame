@@ -2,7 +2,8 @@ import { DEV_DECK, GEO, Rng, generateBoard, shuffle } from './board';
 import { M } from './msg';
 import {
   Action, COSTS, FxEvent, GameState, GameStats, GOODS, GOODS_INFO, GoodsMap, TRACKS, TRACK_INFO, Track,
-  emptyGoods, improveCost, isGood, winPoints, KNIGHTS_PER_LEVEL, Knight, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
+  emptyGoods, improveCost, isGood, winPoints, KNIGHTS_PER_LEVEL, Knight,
+  BARBARIAN_STEPS, EVENT_FACES, EventFace, PROGRESS, PROGRESS_LIMIT, ProgressCard, PLAYER_COLORS, Player, ProductionItem, RESOURCES, RES_INFO, ResMap,
   Resource, emptyRes, totalRes,
 } from './types';
 
@@ -13,7 +14,7 @@ export function createGame(names: string[], rng: Rng = Math.random, mode: 'base'
   const players: Player[] = names.map((name, i) => ({
     name, color: PLAYER_COLORS[i], hand: emptyRes(), dev: [], newDev: [], guards: 0,
     roadsLeft: 15, settlementsLeft: 5, citiesLeft: 4, connected: true,
-    ...(mode === 'guilds' ? { goods: emptyGoods(), levels: { trade: 0, politics: 0, science: 0 } } : {}),
+    ...(mode === 'guilds' ? { goods: emptyGoods(), levels: { trade: 0, politics: 0, science: 0 }, progress: [], defender: 0, pointCards: 0 } : {}),
   }));
   const n = players.length;
   const forward = [...Array(n).keys()];
@@ -21,7 +22,7 @@ export function createGame(names: string[], rng: Rng = Math.random, mode: 'base'
   RESOURCES.forEach((r) => (bank[r] = 19));
   return {
     mode,
-    ...(mode === 'guilds' ? { metropolis: { trade: null, politics: null, science: null } } : {}),
+    ...(mode === 'guilds' ? { metropolis: { trade: null, politics: null, science: null }, barbarians: 0, barbarianAttacked: false, progressDecks: buildDecks(rng) } : {}),
     phase: 'setup', players, current: 0,
     setupOrder: [...forward, ...forward.slice().reverse()], setupIndex: 0,
     setupNeed: 'settlement', lastSetupVertex: null,
@@ -86,7 +87,8 @@ export function validRaiderHexes(s: GameState): number[] {
 
 export function tradeRates(s: GameState, p: number): ResMap {
   const rates = emptyRes();
-  RESOURCES.forEach((r) => (rates[r] = 4));
+  const boost = s.harbourBoost && s.harbourBoost.p === p && s.harbourBoost.turn === s.turnNumber;
+  RESOURCES.forEach((r) => (rates[r] = boost ? 2 : 4));
   for (const port of s.ports) {
     const e = GEO.edges[port.edge];
     if (![e.a, e.b].some((v) => s.buildings[v]?.owner === p)) continue;
@@ -125,6 +127,7 @@ export function victoryPoints(s: GameState, p: number, includeHidden = true): nu
   for (const b of Object.values(s.buildings)) if (b.owner === p) vp += (b.kind === 'city' ? 2 : 1) + (b.metro ? 2 : 0);
   if (s.longestRoad.owner === p) vp += 2;
   if (s.strongestGuard.owner === p) vp += 2;
+  vp += (s.players[p].defender ?? 0) + (s.players[p].pointCards ?? 0);
   if (includeHidden) {
     const pl = s.players[p];
     vp += [...pl.dev, ...pl.newDev].filter((c) => c === 'monument').length;
@@ -194,6 +197,240 @@ export function validWallSpots(s: GameState, p: number) {
   const walls = Object.values(s.buildings).filter((b) => b.owner === p && b.wall).length;
   if (walls >= 3) return [];
   return ownCities(s, p).filter((v) => !s.buildings[v].wall);
+}
+
+// ---------------------------------------------------- event die & barbarians
+
+/** the tutorial can force the next event-die face */
+let forcedEvent: EventFace | null = null;
+export function forceNextEvent(face: EventFace) {
+  forcedEvent = face;
+}
+
+function buildDecks(rng: Rng): Record<Track, ProgressCard[]> {
+  const decks: Record<Track, ProgressCard[]> = { trade: [], politics: [], science: [] };
+  for (const [id, c] of Object.entries(PROGRESS)) for (let i = 0; i < c.count; i++) decks[c.deck].push(id as ProgressCard);
+  TRACKS.forEach((t) => shuffle(decks[t], rng));
+  return decks;
+}
+
+/** sum of active knight levels for one player */
+export function knightStrength(s: GameState, p: number) {
+  return Object.values(s.knights ?? {}).filter((k) => k.owner === p && k.active).reduce((a, k) => a + k.level, 0);
+}
+
+/** cities on the island (each one strengthens the barbarians) */
+export function barbarianStrength(s: GameState) {
+  return Object.values(s.buildings).filter((b) => b.kind === 'city').length;
+}
+
+/** the barbarians land: active knights against the number of cities */
+function barbarianAttack(s: GameState, rng: Rng) {
+  const strength = barbarianStrength(s);
+  const contrib = s.players.map((_, i) => knightStrength(s, i));
+  const defense = contrib.reduce((a, b) => a + b, 0);
+  const won = defense >= strength;
+  let losers: number[] = [], defenders: number[] = [], tie = false;
+  if (won) {
+    const best = Math.max(...contrib);
+    defenders = best > 0 ? contrib.map((c, i) => (c === best ? i : -1)).filter((i) => i >= 0) : [];
+    if (defenders.length === 1) {
+      const pl = s.players[defenders[0]];
+      pl.defender = (pl.defender ?? 0) + 1;
+      log(s, M('log.defended', { name: pl.name }));
+    } else if (defenders.length > 1) {
+      tie = true;
+      // a shared victory: each top defender draws a progress card from their strongest track
+      for (const d of defenders) {
+        const lv = s.players[d].levels!;
+        const deck = TRACKS.reduce((a, b) => (lv[b] > lv[a] ? b : a), 'trade' as Track);
+        drawProgress(s, d, deck);
+      }
+      log(s, M('log.defendedTie'));
+    } else log(s, M('log.defendedNobody'));
+  } else {
+    // the weakest defenders who own an ordinary city each lose one (metropolises are safe)
+    const exposed = s.players.map((_, i) => i).filter((i) => ownCities(s, i).some((v) => !s.buildings[v].metro));
+    const low = Math.min(...exposed.map((i) => contrib[i]));
+    losers = exposed.filter((i) => contrib[i] === low);
+    for (const i of losers) {
+      const v = ownCities(s, i).find((x) => !s.buildings[x].metro)!;
+      const pl = s.players[i];
+      pl.citiesLeft++;
+      if (pl.settlementsLeft > 0) {
+        s.buildings[v] = { owner: i, kind: 'settlement' };
+        pl.settlementsLeft--;
+      } else delete s.buildings[v];
+      log(s, M('log.cityLost', { name: pl.name }));
+    }
+    log(s, M('log.barbariansWin', { a: defense, b: strength }));
+  }
+  fx(s, { t: 'barbarians', won, strength, defense, losers, defenders, tie });
+  // after every attack all knights rest and the ship sails home
+  Object.values(s.knights ?? {}).forEach((k) => (k.active = false));
+  s.barbarians = 0;
+  if (!s.barbarianAttacked) log(s, M('log.robberWakes'));
+  s.barbarianAttacked = true;
+  void rng;
+}
+
+/** a city gate: everyone with that track at level >= 1 draws if the red die is at most their level + 1 */
+function gateDraws(s: GameState, track: Track, red: number, roller: number) {
+  const n = s.players.length;
+  for (let k = 0; k < n; k++) {
+    const i = (roller + k) % n;
+    const lv = s.players[i].levels?.[track] ?? 0;
+    if (lv >= 1 && red <= lv + 1) drawProgress(s, i, track);
+  }
+}
+
+function drawProgress(s: GameState, p: number, deck: Track) {
+  const pile = s.progressDecks?.[deck];
+  if (!pile?.length) return;
+  const card = pile.pop()!;
+  const pl = s.players[p];
+  if ('vp' in PROGRESS[card] && PROGRESS[card].vp) {
+    // point cards are revealed right away
+    pl.pointCards = (pl.pointCards ?? 0) + 1;
+    fx(s, { t: 'drawProgress', p, deck, vp: true });
+    log(s, M('log.pointCard', { name: pl.name, card }));
+    return;
+  }
+  if ((pl.progress ??= []).length >= PROGRESS_LIMIT) {
+    pile.unshift(card); // hand full: the card goes back under the deck
+    log(s, M('log.progressFull', { name: pl.name }));
+    return;
+  }
+  pl.progress.push(card);
+  fx(s, { t: 'drawProgress', p, deck });
+  log(s, M('log.drawProgress', { name: pl.name, track: deck }));
+}
+
+/** take up to n random cards (resources or goods) from one player and give them to another */
+function takeRandom(s: GameState, from: number, to: number, n: number, rng: Rng) {
+  let moved = 0;
+  for (let k = 0; k < n; k++) {
+    const src = s.players[from], dst = s.players[to];
+    const pool: string[] = [];
+    RESOURCES.forEach((r) => { for (let i = 0; i < src.hand[r]; i++) pool.push(r); });
+    GOODS.forEach((g) => { for (let i = 0; i < (src.goods?.[g] ?? 0); i++) pool.push(g); });
+    if (!pool.length) break;
+    const c = pool[Math.floor(rng() * pool.length)];
+    if (isGood(c)) {
+      src.goods![c]--;
+      (dst.goods ??= emptyGoods())[c]++;
+    } else {
+      src.hand[c as Resource]--;
+      dst.hand[c as Resource]++;
+    }
+    moved++;
+  }
+  return moved;
+}
+
+function gainFromBank(s: GameState, p: number, r: Resource, n: number) {
+  const got = Math.min(n, s.bank[r]);
+  s.players[p].hand[r] += got;
+  s.bank[r] -= got;
+  return got;
+}
+
+function playProgress(s: GameState, p: number, a: Extract<Action, { type: 'playProgress' }>, rng: Rng): string | void {
+  if (s.mode !== 'guilds') return M('err.unknownAction');
+  const me = s.players[p];
+  const idx = me.progress?.indexOf(a.card) ?? -1;
+  if (idx < 0) return M('err.noCard');
+  const info = PROGRESS[a.card];
+  if (a.card === 'weightedDice') {
+    if (s.stage !== 'roll') return M('err.beforeRoll');
+  } else if (s.stage !== 'actions') return M('err.cantPlay');
+  const others = s.players.map((_, i) => i).filter((i) => i !== p);
+  switch (a.card) {
+    case 'caravan':
+    case 'favour': {
+      if (!a.good || !GOODS.includes(a.good)) return M('err.pick1');
+      if (a.card === 'caravan') me.goods![a.good] += 2;
+      else for (const o of others) {
+        const og = s.players[o].goods;
+        if (og && og[a.good] > 0) { og[a.good]--; me.goods![a.good]++; }
+      }
+      break;
+    }
+    case 'tolls': {
+      const mine = victoryPoints(s, p);
+      for (const o of others) if (victoryPoints(s, o, false) > mine) takeRandom(s, o, p, 1, rng);
+      break;
+    }
+    case 'harbour': s.harbourBoost = { p, turn: s.turnNumber }; break;
+    case 'market': {
+      if (!a.res || !RESOURCES.includes(a.res)) return M('err.pick1');
+      for (const o of others) if (s.players[o].hand[a.res] > 0) { s.players[o].hand[a.res]--; me.hand[a.res]++; }
+      break;
+    }
+    case 'purse': me.goods!.coin += 2; break;
+    case 'muster':
+      Object.values(s.knights ?? {}).forEach((k) => { if (k.owner === p && !k.active) { k.active = true; k.activatedTurn = s.turnNumber; } });
+      break;
+    case 'fieldPromotion': {
+      const k = a.vertex !== undefined ? s.knights?.[a.vertex] : undefined;
+      if (!k || k.owner !== p) return M('err.notYourKnight');
+      if (k.level >= 3) return M('err.knightMax');
+      if (k.level === 2 && (me.levels?.politics ?? 0) < 3) return M('err.needPolitics');
+      if (knightCount(s, p, (k.level + 1) as 2 | 3) >= KNIGHTS_PER_LEVEL) return M('err.noKnights');
+      k.level = (k.level + 1) as 2 | 3;
+      break;
+    }
+    case 'exile': {
+      if (a.target === undefined || !others.includes(a.target)) return M('err.invalidTarget');
+      const theirs = Object.entries(s.knights ?? {}).filter(([, k]) => k.owner === a.target).sort((x, y) => x[1].level - y[1].level);
+      if (!theirs.length) return M('err.noTargetKnight');
+      delete s.knights![Number(theirs[0][0])];
+      updateLongestRoad(s);
+      break;
+    }
+    case 'stonemasons': {
+      if (a.vertex === undefined || !validWallSpots(s, p).includes(a.vertex)) return M('err.cantWall');
+      s.buildings[a.vertex] = { ...s.buildings[a.vertex], wall: true };
+      break;
+    }
+    case 'taxCollector': {
+      const richest = others.sort((x, y) => handSize(s.players[y]) - handSize(s.players[x]))[0];
+      if (richest !== undefined) takeRandom(s, richest, p, 2, rng);
+      break;
+    }
+    case 'sellsword': {
+      if (knightCount(s, p, 1) >= KNIGHTS_PER_LEVEL) return M('err.noKnights');
+      if (a.vertex === undefined || !validKnightSpots(s, p).includes(a.vertex)) return M('err.cantKnight');
+      (s.knights ??= {})[a.vertex] = { owner: p, level: 1, active: false };
+      updateLongestRoad(s);
+      break;
+    }
+    case 'surveyor':
+      if (me.roadsLeft <= 0 || validRoadSpots(s, p).length === 0) return M('err.nowhereRoads');
+      s.roadworksLeft = 2;
+      s.afterRaider = 'actions';
+      s.stage = 'roadworks';
+      break;
+    case 'irrigation': gainFromBank(s, p, 'grain', 2); break;
+    case 'deepMining': gainFromBank(s, p, 'ore', 2); break;
+    case 'brickworks': gainFromBank(s, p, 'clay', 2); break;
+    case 'sawmill': gainFromBank(s, p, 'timber', 2); break;
+    case 'scholars': me.goods!.paper += 2; break;
+    case 'weightedDice': {
+      const d = a.dice;
+      if (!d || d.length !== 2 || d.some((x) => !Number.isInteger(x) || x < 1 || x > 6)) return M('err.pickDice');
+      s.nextDice = [d[0], d[1]];
+      break;
+    }
+    default:
+      return M('err.unknownAction');
+  }
+  me.progress!.splice(idx, 1);
+  // the card goes back under its deck
+  s.progressDecks![info.deck].unshift(a.card);
+  fx(s, { t: 'progress', p, card: a.card });
+  log(s, M('log.playProgress', { name: me.name, card: a.card }));
+  checkWin(s);
 }
 
 // ----------------------------------------------------------------- knights
@@ -457,7 +694,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
     log(s, M('log.discards', { name: me.name, n: need }));
     fx(s, { t: 'discard', p, n: need });
     stats(s).players[p].discarded += need;
-    if (Object.keys(s.pendingDiscards).length === 0) s.stage = 'moveRaider';
+    if (Object.keys(s.pendingDiscards).length === 0) s.stage = s.robberSleeps ? 'actions' : 'moveRaider';
     return;
   }
   if (a.type === 'acceptTrade' || a.type === 'declineTrade') {
@@ -577,7 +814,20 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
   switch (a.type) {
     case 'roll': {
       if (s.stage !== 'roll') return M('err.rolled');
-      const d: [number, number] = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
+      const d: [number, number] = s.nextDice ?? [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
+      delete s.nextDice;
+      // Guildlands: the event die (ship or a city gate) — the ship sails first, before production
+      let gate: Track | null = null;
+      if (s.mode === 'guilds') {
+        const face: EventFace = forcedEvent ?? EVENT_FACES[Math.floor(rng() * 6)];
+        forcedEvent = null;
+        s.event = face;
+        if (face === 'ship') {
+          s.barbarians = (s.barbarians ?? 0) + 1;
+          log(s, M('log.ship', { n: s.barbarians, m: BARBARIAN_STEPS }));
+          if (s.barbarians >= BARBARIAN_STEPS) barbarianAttack(s, rng);
+        } else gate = face;
+      }
       s.dice = d;
       stats(s).rolls[d[0] + d[1]]++;
       s.rollId = (s.rollId ?? 0) + 1;
@@ -592,11 +842,16 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
         });
         log(s, M('log.raider'));
         s.afterRaider = 'actions';
-        s.stage = Object.keys(s.pendingDiscards).length ? 'discard' : 'moveRaider';
+        // Guildlands: the robber waits on the desert until the barbarians have attacked once
+        const robberAwake = s.mode !== 'guilds' || s.barbarianAttacked;
+        s.stage = Object.keys(s.pendingDiscards).length ? 'discard' : robberAwake ? 'moveRaider' : 'actions';
+        if (!robberAwake) s.robberSleeps = true;
       } else {
         produce(s, sum);
         s.stage = 'actions';
       }
+      if (gate) gateDraws(s, gate, d[0], p);
+      checkWin(s);
       return;
     }
     case 'moveRaider': {
@@ -867,6 +1122,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       const why = knightCantAct(s, k);
       if (why) return why;
       if (!GEO.hexVertices[s.raider].includes(a.vertex)) return M('err.notNextToRaider');
+      if (!s.barbarianAttacked) return M('err.robberAsleep');
       k.active = false;
       k.actedTurn = s.turnNumber;
       fx(s, { t: 'knight', p, act: 'chase', at: a.vertex });
@@ -874,6 +1130,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       startRaider(s, 'actions');
       return;
     }
+    case 'playProgress': return playProgress(s, p, a, rng);
     case 'endTurn': {
       if (s.stage !== 'actions') return M('err.finishStep');
       me.dev.push(...me.newDev);
@@ -885,6 +1142,7 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
       s.stage = 'roll';
       s.turnNumber++;
       s.aqueduct = [];
+      s.robberSleeps = false;
       stats(s).vp.push(s.players.map((_, i) => victoryPoints(s, i)));
       log(s, M('log.turn', { name: s.players[s.current].name }));
       return;

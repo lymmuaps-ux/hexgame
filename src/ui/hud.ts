@@ -7,8 +7,8 @@ import {
   emptyRes, totalRes,
 } from '../game/types';
 import { Selectable } from '../render/scene';
-import { Card, GOODS, GOODS_INFO, Good, TRACKS, TRACK_INFO, Track, cardInfo, improveCost, isGood, winPoints } from '../game/types';
-import { goodsRate, handLimit, handSize, knightMoves, ownCities, readyKnights, validKnightSpots, validWallSpots } from '../game/rules';
+import { BARBARIAN_STEPS, Card, GOODS, GOODS_INFO, Good, PROGRESS, ProgressCard, TRACKS, TRACK_INFO, Track, cardInfo, improveCost, isGood, winPoints } from '../game/types';
+import { barbarianStrength, goodsRate, handLimit, handSize, knightMoves, knightStrength, ownCities, readyKnights, validKnightSpots, validWallSpots } from '../game/rules';
 import { GEO } from '../game/board';
 import { getLang, resLabel, setLang, t, tr } from '../i18n';
 import type { Chat } from './chat';
@@ -20,7 +20,7 @@ import type { Reaction } from '../net/session';
 const REACTIONS = ['🍅', '👏', '😂', '😱', '🔥', '❤️', '😡', '🎉'];
 const FOCUS_ICON: Record<string, string> = { trade: '🤝', road: '🛤️', settlement: '🏠', city: '🏰', chat: '💬', rules: '📖', discard: '🃏', card: '🃏', steal: '🦹', raider: '🌩️', react: '🎯' };
 
-type Mode = null | 'road' | 'settlement' | 'city' | 'wall' | 'knight' | 'kact' | 'kpro' | 'kmove' | 'kchase';
+type Mode = null | 'road' | 'settlement' | 'city' | 'wall' | 'knight' | 'kact' | 'kpro' | 'kmove' | 'kchase' | 'pknight' | 'pcity' | 'pspot';
 type Modal =
   | null
   | { kind: 'trade'; tab: 'bank' | 'players'; give: ResMap; get: ResMap; bankGive: Card | null; bankGet: Card | null }
@@ -28,7 +28,8 @@ type Modal =
   | { kind: 'help' }
   | { kind: 'counter'; id: number; give: ResMap; get: ResMap }
   | { kind: 'improve' }
-  | { kind: 'knights' };
+  | { kind: 'knights' }
+  | { kind: 'progress'; card: ProgressCard; dice: [number, number] };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const resChip = (r: Resource, n?: number) =>
@@ -69,6 +70,8 @@ export class Hud {
   private recapClosed = false;
   /** knight being moved (first tap of a move) */
   private kfrom: number | null = null;
+  /** progress card waiting for a board choice */
+  private pcard: ProgressCard | null = null;
   onViewChange: (v: '3d' | '2d') => void = () => {};
   /** names of whoever sent voice, by seat (spectators have negative seats) */
   private talkerNames = new Map<number, string>();
@@ -384,6 +387,31 @@ export class Hud {
           } else if (e.act === 'chase') this.queueBanner(`🛡️ ${t('banner.knightChase', { name: esc(p.name) })}`, p.color);
           break;
         }
+        case 'barbarians': {
+          sound.barbarians(e.won);
+          const names = (list: number[]) => list.map((i) => esc(s.players[i].name)).join(', ');
+          const text = e.won
+            ? (e.defenders.length === 1 ? t('banner.defended', { name: names(e.defenders), a: e.defense, b: e.strength })
+              : t('banner.defendedShared', { a: e.defense, b: e.strength }))
+            : t('banner.barbariansWin', { names: names(e.losers), a: e.defense, b: e.strength });
+          this.queueBanner(`${e.won ? '🛡️' : '🔥'} ${text}`, e.won ? '#2a9d8f' : '#b3261e');
+          break;
+        }
+        case 'drawProgress': {
+          sound.buyCard();
+          const pl = s.players[e.p];
+          this.fly(`<span>${e.vp ? '⭐' : '📜'}</span>`, { x: innerWidth / 2, y: 40 }, this.centerOf(this.playerSel(e.p)), {
+            cls: 'dev', color: TRACK_INFO[e.deck].color, done: () => this.bump(this.playerSel(e.p)),
+          });
+          if (e.vp) this.queueBanner(`⭐ ${t('banner.pointCard', { name: esc(pl.name) })}`, TRACK_INFO[e.deck].color);
+          break;
+        }
+        case 'progress': {
+          sound.playCard();
+          const pl = s.players[e.p];
+          this.queueBanner(`${PROGRESS[e.card].icon} ${t('banner.progress', { name: esc(pl.name), card: t(`pc.${e.card}`) })}`, TRACK_INFO[PROGRESS[e.card].deck].color);
+          break;
+        }
         case 'metro': {
           const p = s.players[e.to];
           sound.award();
@@ -575,6 +603,16 @@ export class Hud {
     }
   }
 
+  /** the barbarian track: ship steps, defence vs strength */
+  private barbarianHtml(s: GameState) {
+    const step = s.barbarians ?? 0;
+    const pips = Array.from({ length: BARBARIAN_STEPS }, (_, i) => `<i class="${i < step ? 'on' : ''}"></i>`).join('');
+    const def = s.players.reduce((a, _, i) => a + knightStrength(s, i), 0);
+    const str = barbarianStrength(s);
+    return `<span class="barb ${step >= BARBARIAN_STEPS - 2 ? 'near' : ''}" title="${t('bar.title', { a: step, b: BARBARIAN_STEPS, d: def, s: str })}">⛵<span class="track">${pips}</span>
+      <span class="vs ${def >= str ? 'ok' : 'bad'}">⚔️${def} / 🏰${str}</span></span>`;
+  }
+
   /** "⚔️ active strength / total" on a player panel */
   private knightSummary(s: GameState, p: number) {
     const ks = Object.values(s.knights ?? {}).filter((k) => k.owner === p);
@@ -683,6 +721,9 @@ export class Hud {
     if (this.mode === 'wall') return { kind: 'vertex', ids: validWallSpots(s, p), style: 'city' };
     const k = this.knightTargets(s);
     if (k) return { kind: 'vertex', ids: k, style: 'city' };
+    if (this.mode === 'pknight') return { kind: 'vertex', ids: Object.entries(s.knights ?? {}).filter(([, kn]) => kn.owner === p && kn.level < 3).map(([v]) => Number(v)), style: 'city' };
+    if (this.mode === 'pcity') return { kind: 'vertex', ids: validWallSpots(s, p), style: 'city' };
+    if (this.mode === 'pspot') return { kind: 'vertex', ids: validKnightSpots(s, p), style: 'city' };
     return null;
   }
 
@@ -694,6 +735,10 @@ export class Hud {
     else if (kind === 'vertex') {
       const city = s.phase === 'main' && this.mode === 'city';
       if (s.phase === 'main' && this.mode === 'wall') this.act({ type: 'buildWall', vertex: id });
+      else if (s.phase === 'main' && this.pcard && (this.mode === 'pknight' || this.mode === 'pcity' || this.mode === 'pspot')) {
+        this.act({ type: 'playProgress', card: this.pcard, vertex: id });
+        this.pcard = null;
+      }
       else if (s.phase === 'main' && this.mode === 'knight') this.act({ type: 'buildKnight', vertex: id });
       else if (s.phase === 'main' && this.mode === 'kact') this.act({ type: 'activateKnight', vertex: id });
       else if (s.phase === 'main' && this.mode === 'kpro') this.act({ type: 'promoteKnight', vertex: id });
@@ -798,6 +843,32 @@ export class Hud {
       }
       case 'improveOpen': this.modal = { kind: 'improve' }; break;
       case 'knightsOpen': this.modal = { kind: 'knights' }; break;
+      case 'prog': {
+        const card = v as ProgressCard;
+        const need = PROGRESS[card].need;
+        if (need === 'none') this.act({ type: 'playProgress', card });
+        else if (need === 'knight' || need === 'city' || need === 'spot') {
+          this.pcard = card;
+          this.mode = need === 'knight' ? 'pknight' : need === 'city' ? 'pcity' : 'pspot';
+        } else this.modal = { kind: 'progress', card, dice: [3, 4] };
+        break;
+      }
+      case 'progPick': {
+        if (m?.kind !== 'progress') break;
+        const need = PROGRESS[m.card].need;
+        if (need === 'good') this.act({ type: 'playProgress', card: m.card, good: v as Good });
+        else if (need === 'res') this.act({ type: 'playProgress', card: m.card, res: v as Resource });
+        else if (need === 'player') this.act({ type: 'playProgress', card: m.card, target: Number(v) });
+        else if (need === 'dice') this.act({ type: 'playProgress', card: m.card, dice: m.dice });
+        this.modal = null;
+        break;
+      }
+      case 'progDie': {
+        if (m?.kind !== 'progress') break;
+        const [i, val] = v.split(':').map(Number);
+        m.dice[i] = val;
+        break;
+      }
       case 'kmode':
         this.modal = null;
         this.kfrom = null;
@@ -960,6 +1031,9 @@ export class Hud {
       case 'roadworks': return mine ? t('st.roadworks', { n: s.roadworksLeft }) : t('st.roadworking', who);
       default:
         if (!mine) return t('st.turnOf', who);
+        if (this.mode && this.mode.startsWith('p') && this.pcard) {
+          return t('st.p.pick', { card: t(`pc.${this.pcard}`), n: this.selectable()?.ids.length ?? 0 });
+        }
         if (this.mode && this.mode.startsWith('k')) {
           const n = this.selectable()?.ids.length ?? 0;
           return t(this.mode === 'kmove' && this.kfrom !== null ? 'st.k.kmove2' : `st.k.${this.mode}`, { n });
@@ -993,7 +1067,7 @@ export class Hud {
       const doingHtml = doing && doing !== 'idle' ? `<div class="pdoing">${FOCUS_ICON[doing] ?? '…'} ${t(`pres.${doing}`)}</div>` : '';
       return `<div class="player ${i === s.current ? 'active' : ''}${talking ? ' speaking' : ''}${this.aim ? ' aimable' : ''}" data-p="${i}" ${this.aim ? `data-a="reactAt" data-v="${i}"` : ''} style="--pc:${p.color}">${doingHtml}
         <div class="pname"><span class="dot"></span><span class="vpmini">⭐${vp}</span>${esc(p.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}${p.connected ? '' : ` <small class="off">${t('hud.offline')}</small>`}</div>
-        ${guilds ? this.knightSummary(s, i) : ''}${guilds && p.levels ? `<div class="plevels">${TRACKS.map((tr) => `<span class="lv" style="--tc:${TRACK_INFO[tr].color}" title="${t(`track.${tr}`)} ${p.levels![tr]}">${TRACK_INFO[tr].icon}<b>${p.levels![tr]}</b></span>`).join('')}</div>` : ''}
+        ${guilds ? this.knightSummary(s, i) : ''}${guilds && ((p.progress?.length ?? 0) || (p.defender ?? 0)) ? `<div class="pprog">${p.progress?.length ? `<span title="${t('pc.held')}">📜 ${p.progress.length}</span>` : ''}${p.defender ? `<span title="${t('bar.defenderPts')}">🛡️+${p.defender}</span>` : ''}</div>` : ''}${guilds && p.levels ? `<div class="plevels">${TRACKS.map((tr) => `<span class="lv" style="--tc:${TRACK_INFO[tr].color}" title="${t(`track.${tr}`)} ${p.levels![tr]}">${TRACK_INFO[tr].icon}<b>${p.levels![tr]}</b></span>`).join('')}</div>` : ''}
         <div class="pstats">
           <span title="${t('hud.vp')}">⭐ ${vp}</span>
           <span title="${t('hud.cards')}">🂠 ${Math.max(0, handSize(p) - Object.values(this.incoming[i] ?? {}).reduce((a, b) => a + b, 0))}</span>
@@ -1004,6 +1078,7 @@ export class Hud {
       </div>`;
     }).join('');
 
+    const barb = guilds && s.phase === 'main' ? this.barbarianHtml(s) : '';
     const dice = this.rolling
       ? `<div class="dice rolling"><span>🎲</span><span>🎲</span></div>`
       : s.dice
@@ -1078,7 +1153,13 @@ export class Hud {
     }
     const log = s.log.slice(-60).map((l) => `<div>${tr(l, true)}</div>`).join('');
 
-    let handHtml = `${hand}${devs ? `<div class="devs">${devs}</div>` : ''}`;
+    const progs = guilds ? (me.progress ?? []).map((c) => {
+      const info = PROGRESS[c];
+      const canPlay = !spectator && s.current === this.seat && s.phase === 'main' && (c === 'weightedDice' ? s.stage === 'roll' && !this.rolling : s.stage === 'actions');
+      return `<button class="prog" data-a="prog" data-v="${c}" style="--tc:${TRACK_INFO[info.deck].color}" ${canPlay ? '' : 'disabled'} title="${esc(t(`pcText.${c}`))}">
+        <span>${info.icon}</span><b>${t(`pc.${c}`)}</b></button>`;
+    }).join('') : '';
+    let handHtml = `${hand}${devs || progs ? `<div class="devs">${devs}${progs}</div>` : ''}`;
     let controlsHtml = controls;
     if (spectator) {
       handHtml = `<div class="spectating">${t('spec.watching')}</div>`;
@@ -1091,7 +1172,7 @@ export class Hud {
       <div id="top">
         <div class="brand">⬢ Hexhold <button class="code" data-a="copy" title="${t('hud.copyRoom')}">${t('hud.room', { code: esc(this.code) })}</button></div>
         <div class="status">${this.status(s)}</div>
-        ${dice}
+        ${dice}${guilds && s.event && !this.rolling ? `<span class="eventface" title="${t(`ev.${s.event}`)}" style="--tc:${s.event === 'ship' ? '#2b1d14' : TRACK_INFO[s.event].color}">${s.event === 'ship' ? '⛵' : '🏰'}</span>` : ''}${barb}
         <div class="topbtns"><button data-a="lang" class="langtop">${t('hud.switchLang')}</button><button data-a="help" title="${t('hud.rules')}">?</button><button data-a="log" title="${t('hud.logTitle')}">📜</button>${s.phase === 'ended' ? `<button data-a="recap" title="${t('recap.open')}">📊</button>` : ''}<button data-a="sound" class="soundbtn ${sound.enabled ? '' : 'off'}" title="${t(sound.enabled ? 'sound.on' : 'sound.off')}">${sound.enabled ? '🔔' : '🔕'}</button><button data-a="view" class="viewbtn" title="${t(this.view === '3d' ? 'view.to2d' : 'view.to3d')}">${this.view === '3d' ? '🗺️' : '🧊'}</button><button data-a="react" class="reactbtn ${this.aim || this.paletteOpen ? 'on' : ''}" title="${t('react.title')}">${this.aim ?? '😀'}</button><button data-a="chat" class="chatbtn" title="${t('hud.chat')}">💬${this.chat?.unread ? `<span class="unread">${this.chat.unread}</span>` : ''}</button>${this.voiceButtons(s)}</div>
       </div>
       ${this.talkersHtml()}
@@ -1145,7 +1226,7 @@ export class Hud {
     const m = this.modal;
     if (!m) return '';
     if (m.kind === 'help') {
-      return wrap(t('m.help'), `<div class="help">${s.mode === 'guilds' ? t('help.guilds') : ''}${t('help.body', { n: winPoints(s) })}</div>`);
+      return wrap(t('m.help'), `<div class="help">${s.mode === 'guilds' ? t('help.guilds') + t('help.guilds2') : ''}${t('help.body', { n: winPoints(s) })}</div>`);
     }
     if (m.kind === 'pick') {
       const need = m.card === 'harvest' ? 2 : 1;
@@ -1162,6 +1243,18 @@ export class Hud {
     }
     if (m.kind === 'improve') return wrap(`🏛️ ${t('imp.title')}`, this.improveHtml(s));
     if (m.kind === 'knights') return wrap(`⚔️ ${t('kn.title')}`, this.knightsHtml(s));
+    if (m.kind === 'progress') {
+      const info = PROGRESS[m.card];
+      const need = info.need;
+      let body = '';
+      if (need === 'good') body = `<div class="row">${GOODS.map((g) => `<button class="respick" data-a="progPick" data-v="${g}">${GOODS_INFO[g].icon} ${t(`res.${g}`)}</button>`).join('')}</div>`;
+      else if (need === 'res') body = `<div class="row">${RESOURCES.map((r) => `<button class="respick" data-a="progPick" data-v="${r}">${RES_INFO[r].icon} ${resLabel(r)}</button>`).join('')}</div>`;
+      else if (need === 'player') body = `<div class="row">${s.players.map((pl, i) => i === this.seat ? '' : `<button class="steal" style="--pc:${pl.color}" data-a="progPick" data-v="${i}"><span class="dot"></span>${esc(pl.name)}</button>`).join('')}</div>`;
+      else if (need === 'dice') body = `<div class="dicepick">${[0, 1].map((i) => `<div class="dp">${i === 0 ? t('pc.redDie') : t('pc.whiteDie')}<div class="row">${[1, 2, 3, 4, 5, 6].map((v) =>
+        `<button class="respick ${m.dice[i] === v ? 'on' : ''}" data-a="progDie" data-v="${i}:${v}">${DIE[v]}</button>`).join('')}</div></div>`).join('')}
+        <p>${t('pc.sum', { n: m.dice[0] + m.dice[1] })}</p><button class="primary" data-a="progPick" data-v="dice">${t('pc.useDice')}</button></div>`;
+      return wrap(`${info.icon} ${t(`pc.${m.card}`)}`, `<p>${t(`pcText.${m.card}`)}</p>${body}`);
+    }
     // trade
     const rates = tradeRates(s, this.seat);
     const tabs = `<div class="tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-a="tab" data-v="bank">${t('m.tabBank')}</button>

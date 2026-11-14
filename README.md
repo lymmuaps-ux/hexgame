@@ -44,7 +44,14 @@ Activate with 1 grain; an active knight takes one action per turn (not on the tu
 rests: move along your own roads, push away a weaker enemy knight (it retreats along its owner's roads or leaves
 the board), or chase the robber from an adjacent tile. Promote with 1 wool + 1 ore once per turn per knight;
 level 3 needs Politics level 3. Knights block other players' roads and break their longest road.
-Coming next: the barbarian ship and event die (stage 3), progress cards (stage 4).
+Stage 3 (done): every roll also throws an event die (ship ×3, a city gate per track). The ship moves the
+barbarians a step; at step 7 they attack: active knight levels vs the number of cities. If the island holds, the
+strongest defender earns a Defender point (+1; a tie gives the top defenders a progress card each); otherwise the
+weakest defenders lose a city (metropolises are safe). Knights rest after every attack, and the robber only
+starts moving after the first attack.
+Stage 4 (done): our own progress cards (an original set of 38 cards in three decks, not a copy of any published
+deck). A gate face lets everyone with that track at level 1+ draw if the red die is at most their level + 1; hold up
+to 4, point cards are revealed at once; play them on your turn after rolling (Weighted Dice before rolling).
 An **interactive tutorial** (lobby → 🎓) teaches the mode in an offline practice game and grows with each stage.
 
 ## Sound

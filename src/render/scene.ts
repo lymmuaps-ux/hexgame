@@ -7,7 +7,7 @@ import { IslandDecor } from './island';
 import { Social } from './social';
 import { classicSurround, flatTile } from './classic';
 import { decorateTile, tileBase } from './tiles';
-import { GameState, RES_INFO, TRACK_INFO, Track } from '../game/types';
+import { BARBARIAN_STEPS, GameState, RES_INFO, TRACK_INFO, Track } from '../game/types';
 
 export type PickKind = 'vertex' | 'edge' | 'hex';
 export interface Selectable {
@@ -148,6 +148,38 @@ function metroMesh(color: string, track: Track) {
   return shadow(g);
 }
 
+/** Guildlands: the barbarian ship — dark hull, dark sails, a red pennant */
+function barbarianShipMesh() {
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.32, 0.5), std(0x2b1d14));
+  hull.position.y = 0.16;
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.5, 4), std(0x2b1d14));
+  bow.rotation.z = -Math.PI / 2;
+  bow.rotation.x = Math.PI / 4;
+  bow.scale.set(1, 1, 0.75);
+  bow.position.set(0.93, 0.18, 0);
+  g.add(hull, bow);
+  for (const [x, h] of [[-0.25, 1.1], [0.3, 1.3]] as const) {
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, h, 6), std(0x4a3526));
+    mast.position.set(x, 0.32 + h / 2, 0);
+    const sail = new THREE.Mesh(new THREE.BoxGeometry(0.04, h * 0.6, 0.6), std(0x3a2f36));
+    sail.position.set(x, 0.32 + h * 0.55, 0);
+    g.add(mast, sail);
+  }
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.28), std(0xb3261e));
+  flag.position.set(0.3, 1.66, 0.12);
+  // a row of round shields along the side
+  for (let i = 0; i < 5; i++) {
+    const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 10), std(i % 2 ? 0x8a2a1e : 0xb9a37a));
+    shield.rotation.x = Math.PI / 2;
+    shield.position.set(-0.5 + i * 0.25, 0.26, 0.26);
+    g.add(shield);
+  }
+  g.add(flag);
+  g.scale.setScalar(0.85);
+  return shadow(g);
+}
+
 /** Guildlands: a knight — a shield on a round stand, gold bands for its level, a raised banner and glowing gem when active */
 function knightMesh(color: string, level: number, active: boolean) {
   const g = new THREE.Group();
@@ -231,6 +263,9 @@ export class BoardView {
   private particles = new Particles();
   private raiderLanding = false;
   private piecesShown = false;
+  // Guildlands: the barbarian ship sails closer with each ship face on the event die
+  private ship = barbarianShipMesh();
+  private shipGoal = 1;
   private decor: IslandDecor | null = null;
   private spinners: THREE.Object3D[] = [];
   private ray = new THREE.Raycaster();
@@ -295,7 +330,8 @@ export class BoardView {
     this.water = this.ocean.mesh;
     this.scene.add(this.water, this.boardGroup, this.pieces, this.highlights, this.raider, this.dice.group, this.clouds.group, this.particles.group);
     this.social = new Social(this.particles);
-    this.scene.add(this.social.group);
+    this.scene.add(this.social.group, this.ship);
+    this.ship.visible = false;
 
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.onMove(e));
@@ -416,6 +452,16 @@ export class BoardView {
     });
     this.ocean.tick(t);
     this.decor?.tick(t, dt);
+    if (this.ship.visible) {
+      // glide to the current step and bob on the waves
+      const cur = this.ship.userData.progress ?? this.shipGoal;
+      const next = cur + (this.shipGoal - cur) * Math.min(1, dt * 1.5);
+      this.ship.userData.progress = next;
+      const a = -Math.PI * 0.32;
+      const r = 13 - next * 6;
+      this.ship.position.set(Math.cos(a) * r, -0.05 + 0.05 * Math.sin(t / 600), Math.sin(a) * r);
+      this.ship.rotation.set(0.05 * Math.sin(t / 700), -a + Math.PI, 0.04 * Math.sin(t / 500));
+    }
     this.social.tick(dt, t);
     for (const sp of this.spinners) sp.rotation.z += sp.userData.spin * dt;
     this.clouds.tick(dt);
@@ -675,7 +721,7 @@ export class BoardView {
           t: 0,
         };
         this.onDiceLanded(sum);
-      });
+      }, s.mode === 'guilds' ? s.event : undefined);
     }
 
     const rc = GEO.hexCoords[s.raider];
@@ -683,6 +729,9 @@ export class BoardView {
       if (this.raiderTarget.lengthSq() > 0) this.raiderLanding = true;
     }
     this.raiderTarget.set(rc.x + 0.4, 0.2, rc.z - 0.25);
+    // Guildlands: barbarian ship position (0 = far away, 1 = landing)
+    this.ship.visible = s.mode === 'guilds' && s.phase === 'main';
+    this.shipGoal = (s.barbarians ?? 0) / BARBARIAN_STEPS;
     // victory lap: the camera slowly circles the island
     this.controls.autoRotate = s.phase === 'ended';
     this.controls.autoRotateSpeed = 0.8;

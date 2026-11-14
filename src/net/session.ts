@@ -1,5 +1,5 @@
-import { applyAction, createGame } from '../game/rules';
-import { Action, GameMode, GameState, MAX_PLAYERS } from '../game/types';
+import { applyAction, createGame, forceNextEvent } from '../game/rules';
+import { Action, EventFace, GameMode, GameState, MAX_PLAYERS } from '../game/types';
 import { M } from '../game/msg';
 import { Link, getTransport } from './transport';
 
@@ -318,6 +318,8 @@ export interface LocalControls {
   patch(fn: (s: GameState) => void): void;
   /** make the next dice roll come out as these two dice */
   setNextRoll(d: [number, number]): void;
+  /** make the next event die show this face */
+  setNextEvent(face: EventFace): void;
   state(): GameState;
 }
 
@@ -356,6 +358,7 @@ export function localGame(name: string, mode: GameMode, ev: SessionEvents): Sess
       emit();
     },
     setNextRoll: (d) => (nextRoll = d),
+    setNextEvent: (face) => forceNextEvent(face),
     state: () => state,
   };
   queueMicrotask(emit);

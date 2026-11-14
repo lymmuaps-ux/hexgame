@@ -22,6 +22,7 @@ interface Step {
 
 let turnAtStep = 0;
 let raiderAtStep = -1;
+let progAtStep = 0;
 const mine = (s: GameState) => Object.values(s.buildings).filter((b) => b.owner === 0);
 
 /** load the dice so the next roll hits a tile next to the player's city, preferring one that makes goods */
@@ -110,6 +111,27 @@ const STEPS: Step[] = [
     }),
     done: (s) => Object.values(s.knights ?? {}).some((k) => k.owner === 0 && k.actedTurn === s.turnNumber),
   },
+  { key: 'kInfo' },
+  // ------------------------------------------------------------ barbarians
+  { key: 'bIntro', highlight: '.barb' },
+  {
+    key: 'bEndTurn', highlight: 'button[data-a=end]',
+    enter: (c) => {
+      turnAtStep = c.state().turnNumber;
+      // move the ship close and make sure a knight stands ready
+      c.patch((s) => {
+        s.barbarians = 6;
+        Object.values(s.knights ?? {}).forEach((k) => { if (k.owner === 0) { k.active = true; delete k.activatedTurn; delete k.actedTurn; } });
+      });
+    },
+    done: (s) => s.turnNumber > turnAtStep,
+  },
+  {
+    key: 'bRoll', highlight: 'button[data-a=roll], .barb',
+    enter: (c) => { c.setNextRoll([2, 3]); c.setNextEvent('ship'); },
+    done: (s) => !!s.barbarianAttacked,
+  },
+  { key: 'bResult', highlight: '.pprog' },
   {
     key: 'kChase', highlight: 'button[data-a=knightsOpen], .kaction[data-v=kchase]',
     // wake the knight again and park the robber next to it for this lesson
@@ -125,7 +147,19 @@ const STEPS: Step[] = [
     }),
     done: (s) => s.raider !== raiderAtStep && s.stage === 'actions',
   },
-  { key: 'kInfo' },
+  // -------------------------------------------------------- progress cards
+  { key: 'pIntro' },
+  { key: 'pEndTurn', highlight: 'button[data-a=end]', enter: (c) => (turnAtStep = c.state().turnNumber), done: (s) => s.turnNumber > turnAtStep },
+  {
+    key: 'pRoll', highlight: 'button[data-a=roll]',
+    enter: (c) => { c.setNextRoll([2, 4]); c.setNextEvent('trade'); },
+    done: (s) => (s.players[0].progress?.length ?? 0) > 0 || (s.players[0].pointCards ?? 0) > 0,
+  },
+  {
+    key: 'pPlay', highlight: '.prog',
+    enter: (c) => (progAtStep = c.state().players[0].progress?.length ?? 0),
+    done: (s) => (s.players[0].progress?.length ?? 0) < progAtStep,
+  },
   { key: 'finish' },
 ];
 

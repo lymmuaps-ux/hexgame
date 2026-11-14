@@ -692,3 +692,27 @@ table.stats tr.sum td, table.stats tr.sum th { font-weight: 800; color: var(--in
 .kaction .kcost { font-size: 0.85rem; }
 .kaction .kcount { min-width: 24px; height: 24px; border-radius: 12px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 0.8rem; }
 .kaction[disabled] .kcount { background: #b9ab90; }
+
+/* barbarians & progress cards */
+.barb { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; padding: 2px 8px; border-radius: 10px; background: #f4ece0; border: 1px solid #c9b79a; white-space: nowrap; }
+.barb .track { display: inline-flex; gap: 2px; }
+.barb .track i { width: 7px; height: 10px; border-radius: 2px; background: #d9cbb2; }
+.barb .track i.on { background: #4a2a22; }
+.barb.near { animation: barb-near 1s ease-in-out infinite; border-color: #b3261e; }
+@keyframes barb-near { 50% { box-shadow: 0 0 0 3px rgba(179, 38, 30, 0.3); } }
+.barb .vs { font-weight: 700; }
+.barb .vs.ok { color: #1f7a4a; }
+.barb .vs.bad { color: #b3261e; }
+.eventface { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: #f3ecdc; border: 3px solid var(--tc); font-size: 1rem; }
+.pprog { display: flex; gap: 6px; font-size: 0.75rem; margin: 1px 0 2px; }
+.pprog span { padding: 0 5px; border-radius: 6px; background: #f3ecdc; border: 1px solid #c9b79a; }
+#players.mini .pprog { display: none; }
+.prog { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 0.78rem; background: color-mix(in srgb, var(--tc) 16%, white); border: 2px solid var(--tc); border-radius: 9px; }
+.prog b { font-weight: 600; }
+.dicepick .dp { margin-bottom: 8px; font-weight: 600; }
+.dicepick .respick { font-size: 1.5rem; padding: 0 8px; }
+@media (max-width: 760px) { .barb .track { display: none; } }
+/* the top bar holds a lot in Guildlands: let the buttons wrap instead of squeezing the status */
+#top { flex-wrap: wrap; justify-content: center; row-gap: 6px; max-width: min(1000px, calc(100% - 20px)); }
+#top .status { min-width: 220px; flex: 1 1 220px; text-align: center; }
+#top .topbtns { flex-wrap: wrap; justify-content: center; }

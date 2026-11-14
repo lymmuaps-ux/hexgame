@@ -1,5 +1,6 @@
 // Plays many random games headlessly to exercise the rules engine.
 import { applyAction, createGame, validCitySpots, validRoadSpots, validSettlementSpots, validRaiderHexes, tradeRates, validWallSpots, goodsRate, validKnightSpots, knightMoves, readyKnights } from '../src/game/rules';
+import { PROGRESS, BARBARIAN_STEPS } from '../src/game/types';
 import { Action, GameState, RESOURCES, totalRes, emptyRes, isGood, GOODS, TRACKS, TRACK_INFO, emptyGoods, improveCost } from '../src/game/types';
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -23,6 +24,8 @@ function choose(s: GameState): { p: number; a: Action } {
       ? { p, a: { type: 'buildSettlement', vertex: pick(validSettlementSpots(s, p)) } }
       : { p, a: { type: 'buildRoad', edge: pick(validRoadSpots(s, p)) } };
   }
+  if (s.mode === 'guilds' && s.stage === 'roll' && s.players[p].progress?.includes('weightedDice') && Math.random() < 0.3)
+    return { p, a: { type: 'playProgress', card: 'weightedDice', dice: [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)] } };
   switch (s.stage) {
     case 'roll': return { p, a: !s.devPlayedThisTurn && s.players[p].dev.includes('guard') && Math.random() < 0.3 ? { type: 'playDev', card: 'guard' } : { type: 'roll' } };
     case 'moveRaider': return { p, a: { type: 'moveRaider', hex: pick(validRaiderHexes(s)) } };
@@ -48,6 +51,16 @@ function choose(s: GameState): { p: number; a: Action } {
     for (const tr of TRACKS) if ((me.goods?.[TRACK_INFO[tr].good] ?? 0) >= improveCost(me.levels![tr])) opts.push({ type: 'improve', track: tr }, { type: 'improve', track: tr });
     const w = validWallSpots(s, p);
     if (w.length && me.hand.clay >= 2) opts.push({ type: 'buildWall', vertex: pick(w) });
+    // progress cards, with a valid-looking choice for whatever they need
+    for (const card of me.progress ?? []) {
+      if (card === 'weightedDice') continue;
+      const others = s.players.map((_, i) => i).filter((i) => i !== p);
+      const myKnights = Object.entries(s.knights ?? {}).filter(([, k]) => k.owner === p).map(([v]) => Number(v));
+      opts.push({
+        type: 'playProgress', card, good: pick([...GOODS]), res: pick([...RESOURCES]), target: pick(others),
+        vertex: PROGRESS[card].need === 'knight' ? pick(myKnights) : PROGRESS[card].need === 'city' ? pick(validWallSpots(s, p)) : pick(validKnightSpots(s, p)),
+      } as Action);
+    }
     // knights
     const ks = validKnightSpots(s, p);
     if (ks.length && me.hand.wool >= 1 && me.hand.ore >= 1) opts.push({ type: 'buildKnight', vertex: pick(ks) });
@@ -76,7 +89,7 @@ function choose(s: GameState): { p: number; a: Action } {
   return { p, a: pick(opts) };
 }
 
-let wins = 0, totalTurns = 0, guildGames = 0, metroGames = 0, maxLevel = 0, knightsSeen = 0, mightySeen = 0;
+let wins = 0, totalTurns = 0, guildGames = 0, metroGames = 0, maxLevel = 0, knightsSeen = 0, mightySeen = 0, defenderPts = 0, pointCards = 0, guildUnfinished = 0;
 const GAMES = 300;
 for (let g = 0; g < GAMES; g++) {
   let s = createGame(['A', 'B', 'C', 'D'].slice(0, 2 + (g % 3)), Math.random, g % 2 ? 'guilds' : 'base');
@@ -103,6 +116,15 @@ for (let g = 0; g < GAMES; g++) {
     }
     if (s.mode === 'guilds') {
       for (const pl of s.players) if (GOODS.some((k) => pl.goods![k] < 0)) throw new Error('negative goods');
+      // progress cards are never lost or duplicated
+      const total = Object.values(PROGRESS).reduce((t, c) => t + c.count, 0);
+      const inDecks = Object.values(s.progressDecks!).reduce((t, d) => t + d.length, 0);
+      const inHands = s.players.reduce((t, pl) => t + (pl.progress?.length ?? 0), 0);
+      const points = s.players.reduce((t, pl) => t + (pl.pointCards ?? 0), 0);
+      if (inDecks + inHands + points !== total) throw new Error(`progress cards ${inDecks}+${inHands}+${points} != ${total}`);
+      if (s.players.some((pl) => (pl.progress?.length ?? 0) > 4)) throw new Error('progress hand over limit');
+      if ((s.barbarians ?? 0) < 0 || (s.barbarians ?? 0) >= BARBARIAN_STEPS) throw new Error('barbarian track out of range');
+      if (!s.barbarianAttacked && s.raider !== s.hexes.find((h) => h.type === 'desert')!.id) throw new Error('robber moved before the first attack');
       for (const [v, k] of Object.entries(s.knights ?? {})) {
         if (s.buildings[Number(v)]) throw new Error('knight on a building');
         if (k.level === 3 && s.players[k.owner].levels!.politics < 3) throw new Error('level 3 knight without politics 3');
@@ -123,6 +145,9 @@ for (let g = 0; g < GAMES; g++) {
     if (Object.values(s.metropolis!).some((x) => x !== null)) metroGames++;
     maxLevel = Math.max(maxLevel, ...s.players.flatMap((pl) => Object.values(pl.levels!)));
     knightsSeen += Object.keys(s.knights ?? {}).length;
+    defenderPts += s.players.reduce((t, pl) => t + (pl.defender ?? 0), 0);
+    pointCards += s.players.reduce((t, pl) => t + (pl.pointCards ?? 0), 0);
+    if (s.phase !== 'ended') guildUnfinished++;
     mightySeen += Object.values(s.knights ?? {}).filter((k) => k.level === 3).length;
   }
   if (s.phase === 'ended') {
@@ -136,9 +161,10 @@ for (let g = 0; g < GAMES; g++) {
     s.players.forEach((pl, i) => {
       const built = Object.values(s.buildings).filter((b) => b.owner === i && b.kind === 'settlement').length;
       const direct = s.mode === 'guilds' ? 1 : 0; // the Guildlands setup city is built directly, not upgraded
-      if (st.players[i].settlements - (st.players[i].cities - direct) !== built) throw new Error('settlement stats');
+      // (in Guildlands the barbarians can turn cities back into settlements, so this identity only holds in the base game)
+      if (s.mode !== 'guilds' && st.players[i].settlements - (st.players[i].cities - direct) !== built) throw new Error('settlement stats');
     });
   }
   void totalRes;
 }
-console.log(`${wins}/${GAMES} games finished, avg ${Math.round(totalTurns / wins)} turns · guildlands games: ${guildGames}, with a metropolis: ${metroGames}, max level reached: ${maxLevel}, knights on boards at the end: ${knightsSeen} (level 3: ${mightySeen})`);
+console.log(`${wins}/${GAMES} games finished, avg ${Math.round(totalTurns / wins)} turns · guildlands games: ${guildGames}, with a metropolis: ${metroGames}, max level reached: ${maxLevel}, knights on boards at the end: ${knightsSeen} (level 3: ${mightySeen}), defender points: ${defenderPts}, point cards: ${pointCards}, unfinished guildlands games: ${guildUnfinished}`);

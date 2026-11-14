@@ -216,6 +216,19 @@ class SoundFx {
     });
   }
 
+  /** the barbarians land: a horn and drums, then a bright chord (held) or a low rumble (a city falls) */
+  barbarians(won: boolean) {
+    if (!this.ready('barbarians', 1000)) return;
+    this.tone(147, 0.9, { type: 'sawtooth', vol: 0.08, attack: 0.08 });
+    this.tone(220, 0.9, { type: 'sawtooth', vol: 0.05, attack: 0.1 });
+    for (let i = 0; i < 6; i++) this.knock(0.15 + i * 0.16, 0.6, 0.3);
+    if (won) [523, 659, 784].forEach((f) => this.tone(f, 0.7, { type: 'triangle', vol: 0.08, at: 1.2 }));
+    else {
+      this.tone(80, 1.2, { type: 'sawtooth', vol: 0.12, at: 1.1, slide: 45 });
+      this.noise(1, { vol: 0.15, at: 1.1, freq: 200, filter: 'lowpass' });
+    }
+  }
+
   pop() {
     if (!this.ready('pop', 120)) return;
     this.tone(500, 0.08, { type: 'sine', vol: 0.12, slide: 900 });

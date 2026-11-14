@@ -88,6 +88,10 @@ export interface Player {
   /** Guildlands */
   goods?: GoodsMap;
   levels?: Record<Track, number>;
+  progress?: ProgressCard[];
+  /** points from defending the island and from revealed point cards */
+  defender?: number;
+  pointCards?: number;
 }
 
 export interface Building {
@@ -135,9 +139,55 @@ export type FxEvent =
   | { t: 'playDev'; p: number; card: DevCard }
   | { t: 'metro'; track: Track; from: number | null; to: number }
   | { t: 'improve'; p: number; track: Track; level: number }
-  | { t: 'knight'; p: number; act: KnightAct; at: number; to?: number };
+  | { t: 'knight'; p: number; act: KnightAct; at: number; to?: number }
+  | { t: 'barbarians'; won: boolean; strength: number; defense: number; losers: number[]; defenders: number[]; tie: boolean }
+  | { t: 'progress'; p: number; card: ProgressCard }
+  | { t: 'drawProgress'; p: number; deck: Track; vp?: boolean };
 
 export type KnightAct = 'build' | 'activate' | 'promote' | 'move' | 'displace' | 'chase';
+
+// --------------------------------------------- Guildlands: event die & barbarians
+/** faces of the event die: the ship (3 faces) or a city gate in a track's colour */
+export type EventFace = 'ship' | Track;
+export const EVENT_FACES: EventFace[] = ['ship', 'ship', 'ship', 'trade', 'politics', 'science'];
+/** steps the barbarian ship sails before it lands */
+export const BARBARIAN_STEPS = 7;
+
+// ------------------------------------------------------ Guildlands: progress cards
+/**
+ * Our own progress cards (original set, not a copy of any published deck).
+ * `need` says what the player chooses when playing it.
+ */
+export type ProgressNeed = 'none' | 'good' | 'res' | 'player' | 'knight' | 'city' | 'spot' | 'dice';
+export const PROGRESS = {
+  // trade (amber)
+  caravan: { deck: 'trade', count: 2, need: 'good', icon: '🐪' },
+  tolls: { deck: 'trade', count: 2, need: 'none', icon: '🌉' },
+  harbour: { deck: 'trade', count: 2, need: 'none', icon: '⚓' },
+  market: { deck: 'trade', count: 2, need: 'res', icon: '🏪' },
+  favour: { deck: 'trade', count: 2, need: 'good', icon: '🤲' },
+  purse: { deck: 'trade', count: 2, need: 'none', icon: '👛' },
+  // politics (purple)
+  muster: { deck: 'politics', count: 2, need: 'none', icon: '📯' },
+  fieldPromotion: { deck: 'politics', count: 2, need: 'knight', icon: '🎖️' },
+  exile: { deck: 'politics', count: 2, need: 'player', icon: '📜' },
+  stonemasons: { deck: 'politics', count: 2, need: 'city', icon: '🪨' },
+  taxCollector: { deck: 'politics', count: 2, need: 'none', icon: '💰' },
+  sellsword: { deck: 'politics', count: 2, need: 'spot', icon: '🗡️' },
+  heraldsHonour: { deck: 'politics', count: 1, need: 'none', icon: '🎺', vp: true },
+  // science (teal)
+  surveyor: { deck: 'science', count: 2, need: 'none', icon: '📐' },
+  irrigation: { deck: 'science', count: 2, need: 'none', icon: '💧' },
+  deepMining: { deck: 'science', count: 2, need: 'none', icon: '⛏️' },
+  brickworks: { deck: 'science', count: 1, need: 'none', icon: '🧱' },
+  sawmill: { deck: 'science', count: 1, need: 'none', icon: '🪚' },
+  scholars: { deck: 'science', count: 2, need: 'none', icon: '🎓' },
+  weightedDice: { deck: 'science', count: 2, need: 'dice', icon: '🎲' },
+  greatLibrary: { deck: 'science', count: 1, need: 'none', icon: '🏛️', vp: true },
+} as const satisfies Record<string, { deck: Track; count: number; need: ProgressNeed; icon: string; vp?: boolean }>;
+export type ProgressCard = keyof typeof PROGRESS;
+/** at most this many progress cards in hand (point cards don't count) */
+export const PROGRESS_LIMIT = 4;
 
 /** Guildlands: a knight standing on a corner */
 export interface Knight {
@@ -211,6 +261,18 @@ export interface GameState {
   aqueduct?: number[];
   /** Guildlands: knights on corners (vertex id -> knight) */
   knights?: Record<number, Knight>;
+  /** Guildlands: barbarian ship position (0..BARBARIAN_STEPS) and whether it has attacked yet (the robber waits until then) */
+  barbarians?: number;
+  barbarianAttacked?: boolean;
+  /** Guildlands: the event die from the latest roll */
+  event?: EventFace;
+  progressDecks?: Record<Track, ProgressCard[]>;
+  /** dice chosen with a progress card for the next roll */
+  nextDice?: [number, number];
+  /** a temporary 2:1 harbour for one player this turn */
+  harbourBoost?: { p: number; turn: number };
+  /** a 7 was rolled before the first barbarian attack: no robber this turn */
+  robberSleeps?: boolean;
   /** numbers collected for the post-game recap */
   stats?: GameStats;
   /** in-game chat (added by the host outside the rules) */
@@ -245,6 +307,7 @@ export type Action =
   | { type: 'promoteKnight'; vertex: number }
   | { type: 'moveKnight'; from: number; to: number }
   | { type: 'chaseRaider'; vertex: number }
+  | { type: 'playProgress'; card: ProgressCard; good?: Good; res?: Resource; target?: number; vertex?: number; dice?: [number, number] }
   | { type: 'moveRaider'; hex: number }
   | { type: 'steal'; target: number }
   | { type: 'buildRoad'; edge: number }
