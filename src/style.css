@@ -716,3 +716,17 @@ table.stats tr.sum td, table.stats tr.sum th { font-weight: 800; color: var(--in
 #top { flex-wrap: wrap; justify-content: center; row-gap: 6px; max-width: min(1000px, calc(100% - 20px)); }
 #top .status { min-width: 220px; flex: 1 1 220px; text-align: center; }
 #top .topbtns { flex-wrap: wrap; justify-content: center; }
+
+/* who goes first */
+.order-modal { width: min(440px, 100%); }
+.orows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.orow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: #fff; border-inline-start: 5px solid var(--pc); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.orow.out { opacity: 0.55; }
+.oname { font-weight: 700; flex: 1; }
+.ohist { color: #8a7a66; }
+.ocell { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; }
+.odice { font-size: 1.6rem; line-height: 1; }
+.odice.pop { animation: dice-pop 0.5s cubic-bezier(.3,1.6,.5,1); }
+.ocell b { font-size: 1.2rem; min-width: 22px; text-align: center; }
+.otie { font-weight: 700; color: #b8611a; }
+.rolling-dots { animation: fade-in 1s ease-in-out infinite alternate; }

@@ -140,6 +140,8 @@ export type FxEvent =
   | { t: 'metro'; track: Track; from: number | null; to: number }
   | { t: 'improve'; p: number; track: Track; level: number }
   | { t: 'knight'; p: number; act: KnightAct; at: number; to?: number }
+  | { t: 'orderRoll'; p: number; d: [number, number] }
+  | { t: 'firstPlayer'; p: number }
   | { t: 'barbarians'; won: boolean; strength: number; defense: number; losers: number[]; defenders: number[]; tie: boolean }
   | { t: 'progress'; p: number; card: ProgressCard }
   | { t: 'drawProgress'; p: number; deck: Track; vp?: boolean };
@@ -233,7 +235,13 @@ export interface GameStats {
 }
 
 export interface GameState {
-  phase: 'setup' | 'main' | 'ended';
+  /** 'order': everyone rolls to decide who starts */
+  phase: 'order' | 'setup' | 'main' | 'ended';
+  /** the player who rolled highest and takes the first turn */
+  firstPlayer?: number;
+  /** start-order rolls: who may still roll this round, and every round's results */
+  orderContenders?: number[];
+  orderRounds?: { p: number; d: [number, number] }[][];
   players: Player[];
   current: number;
   setupOrder: number[];
@@ -298,6 +306,7 @@ export interface GameState {
 
 export type Action =
   | { type: 'roll' }
+  | { type: 'orderRoll' }
   | { type: 'discard'; cards: Partial<ResMap>; goods?: Partial<GoodsMap> }
   | { type: 'improve'; track: Track }
   | { type: 'buildWall'; vertex: number }

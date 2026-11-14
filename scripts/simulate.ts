@@ -18,6 +18,11 @@ function choose(s: GameState): { p: number; a: Action } {
     }
     return { p, a: { type: 'discard', cards, goods } };
   }
+  if (s.phase === 'order') {
+    const round = s.orderRounds![s.orderRounds!.length - 1];
+    const who = s.orderContenders!.find((i) => !round.some((r) => r.p === i))!;
+    return { p: who, a: { type: 'orderRoll' } };
+  }
   const p = s.current;
   if (s.phase === 'setup') {
     return s.setupNeed === 'settlement'
@@ -139,6 +144,12 @@ for (let g = 0; g < GAMES; g++) {
         if (owner !== null && s.players[owner].levels![tr] < 4) throw new Error('metropolis below level 4');
       }
     }
+  }
+  // the starting order: whoever started setup must also take the first turn, and setup must go round then back
+  if (s.firstPlayer !== undefined && s.players.length > 1) {
+    const so = s.setupOrder, n = s.players.length;
+    if (so[0] !== s.firstPlayer || so[n - 1] !== so[n] || so[2 * n - 1] !== s.firstPlayer) throw new Error('bad setup order ' + so.join(','));
+    for (let k = 1; k < n; k++) if (so[k] !== (so[k - 1] + 1) % n) throw new Error('setup order not a cycle ' + so.join(','));
   }
   if (s.mode === 'guilds') {
     guildGames++;

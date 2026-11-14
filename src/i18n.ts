@@ -5,6 +5,12 @@ export type Lang = 'en' | 'ar';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  'st.order': 'Everyone rolls – the highest roll goes first', 'order.title': 'Who goes first?',
+  'order.intro': 'Everyone rolls two dice. The highest total starts, then play goes around the table (and back again for the second settlement).',
+  'order.roll': '🎲 Roll', 'order.waiting': 'waiting to roll…', 'order.out': 'lower roll', 'order.tie': 'Tie for the highest roll – {names} roll again!',
+  'banner.first': '{name} goes first!', 'log.orderRoll': '🎲 {name} rolls {n} for the starting order.',
+  'log.orderTie': '🎲 Tie at {n} – {names} roll again.', 'log.orderFirst': '👑 {name} rolled highest and goes first!',
+  'err.rollForOrder': 'First everyone rolls to decide who starts.', 'err.notContender': 'You are not in this roll-off.', 'err.alreadyRolled': 'You already rolled – waiting for the others.',
   'pc.caravan': 'Caravan Charter', 'pc.tolls': 'Toll Bridge', 'pc.harbour': 'Harbour Pact', 'pc.market': 'Market Day', 'pc.favour': 'Guild Favour', 'pc.purse': 'Coin Purse',
   'pc.muster': 'Muster Call', 'pc.fieldPromotion': 'Field Promotion', 'pc.exile': 'Exile Decree', 'pc.stonemasons': 'Stonemasons', 'pc.taxCollector': 'Tax Collector', 'pc.sellsword': 'Sellsword', 'pc.heraldsHonour': 'Herald’s Honour',
   'pc.surveyor': 'Surveyor’s Kit', 'pc.irrigation': 'Irrigation', 'pc.deepMining': 'Deep Mining', 'pc.brickworks': 'Brickworks', 'pc.sawmill': 'Sawmill', 'pc.scholars': 'Scholars’ Guild', 'pc.weightedDice': 'Weighted Dice', 'pc.greatLibrary': 'Great Library',
@@ -290,6 +296,12 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+  'st.order': 'الجميع يرمي النرد – صاحب أعلى رمية يبدأ', 'order.title': 'من يبدأ أولًا؟',
+  'order.intro': 'يرمي كل لاعب نردين. صاحب أعلى مجموع يبدأ، ثم يدور اللعب حول الطاولة (ويعود بالعكس للمستوطنة الثانية).',
+  'order.roll': '🎲 ارمِ', 'order.waiting': 'بانتظار الرمي…', 'order.out': 'رمية أقل', 'order.tie': 'تعادل على أعلى رمية – {names} يرمون مجددًا!',
+  'banner.first': '{name} يبدأ أولًا!', 'log.orderRoll': '🎲 {name} يرمي {n} لتحديد ترتيب البدء.',
+  'log.orderTie': '🎲 تعادل عند {n} – {names} يرمون مجددًا.', 'log.orderFirst': '👑 {name} حصل على أعلى رمية ويبدأ أولًا!',
+  'err.rollForOrder': 'أولًا يرمي الجميع لتحديد من يبدأ.', 'err.notContender': 'لست في هذه الجولة من الرمي.', 'err.alreadyRolled': 'لقد رميت بالفعل – بانتظار الآخرين.',
   'pc.caravan': 'ميثاق القافلة', 'pc.tolls': 'جسر الرسوم', 'pc.harbour': 'حلف الميناء', 'pc.market': 'يوم السوق', 'pc.favour': 'معروف النقابة', 'pc.purse': 'صرّة العملات',
   'pc.muster': 'نداء الحشد', 'pc.fieldPromotion': 'ترقية ميدانية', 'pc.exile': 'مرسوم النفي', 'pc.stonemasons': 'البنّاؤون', 'pc.taxCollector': 'جابي الضرائب', 'pc.sellsword': 'المرتزق', 'pc.heraldsHonour': 'وسام المنادي',
   'pc.surveyor': 'عُدّة المسّاح', 'pc.irrigation': 'الريّ', 'pc.deepMining': 'التعدين العميق', 'pc.brickworks': 'مصنع الطوب', 'pc.sawmill': 'المنشرة', 'pc.scholars': 'نقابة العلماء', 'pc.weightedDice': 'النرد المثقّل', 'pc.greatLibrary': 'المكتبة الكبرى',

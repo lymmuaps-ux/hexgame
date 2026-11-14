@@ -23,7 +23,9 @@ export function createGame(names: string[], rng: Rng = Math.random, mode: 'base'
   return {
     mode,
     ...(mode === 'guilds' ? { metropolis: { trade: null, politics: null, science: null }, barbarians: 0, barbarianAttacked: false, progressDecks: buildDecks(rng) } : {}),
-    phase: 'setup', players, current: 0,
+    // with 2+ players everyone first rolls to decide who starts
+    phase: players.length > 1 ? 'order' : 'setup', players, current: 0,
+    firstPlayer: 0, orderContenders: forward, orderRounds: [[]],
     setupOrder: [...forward, ...forward.slice().reverse()], setupIndex: 0,
     setupNeed: 'settlement', lastSetupVertex: null,
     stage: 'actions', afterRaider: 'actions', pendingDiscards: {}, stealFrom: [], roadworksLeft: 0,
@@ -649,11 +651,11 @@ function nextSetup(s: GameState) {
   s.lastSetupVertex = null;
   if (s.setupIndex >= s.setupOrder.length) {
     s.phase = 'main';
-    s.current = 0;
+    s.current = s.firstPlayer ?? 0;
     s.stage = 'roll';
     s.turnNumber = 1;
     stats(s).vp.push(s.players.map((_, i) => victoryPoints(s, i)));
-    log(s, M('log.setupDone', { name: s.players[0].name }));
+    log(s, M('log.setupDone', { name: s.players[s.current].name }));
   } else s.current = s.setupOrder[s.setupIndex];
 }
 
@@ -677,6 +679,41 @@ function reduce(s: GameState, p: number, a: Action, rng: Rng): string | void {
   if (s.phase === 'ended') return M('err.over');
   const me = s.players[p];
   if (!me) return M('err.unknownPlayer');
+
+  // ----------------------------------------------------- who goes first?
+  if (s.phase === 'order') {
+    if (a.type !== 'orderRoll') return M('err.rollForOrder');
+    const contenders = s.orderContenders ?? [];
+    const round = (s.orderRounds ??= [[]])[s.orderRounds.length - 1];
+    if (!contenders.includes(p)) return M('err.notContender');
+    if (round.some((r) => r.p === p)) return M('err.alreadyRolled');
+    const d: [number, number] = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
+    round.push({ p, d });
+    fx(s, { t: 'orderRoll', p, d });
+    log(s, M('log.orderRoll', { name: me.name, n: d[0] + d[1] }));
+    if (round.length < contenders.length) return;
+    // everyone in this round has rolled: highest wins, ties roll again
+    const best = Math.max(...round.map((r) => r.d[0] + r.d[1]));
+    const top = round.filter((r) => r.d[0] + r.d[1] === best).map((r) => r.p);
+    if (top.length > 1) {
+      s.orderContenders = top;
+      s.orderRounds.push([]);
+      log(s, M('log.orderTie', { n: best, names: top.map((i) => s.players[i].name).join(', ') }));
+      return;
+    }
+    const first = top[0];
+    const n = s.players.length;
+    const cycle = Array.from({ length: n }, (_, k) => (first + k) % n);
+    s.firstPlayer = first;
+    s.orderContenders = [];
+    s.setupOrder = [...cycle, ...cycle.slice().reverse()];
+    s.setupIndex = 0;
+    s.current = first;
+    s.phase = 'setup';
+    fx(s, { t: 'firstPlayer', p: first });
+    log(s, M('log.orderFirst', { name: s.players[first].name }));
+    return;
+  }
   const isTurn = p === s.current;
 
   // actions that may be taken out of turn

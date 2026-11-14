@@ -263,7 +263,6 @@ export async function hostGame(name: string, ev: SessionEvents, resume?: SavedHo
       if (state) return;
       if (seats.length < 2) return ev.onError(M('net.need2'));
       state = createGame(seats.map((s) => s.name), Math.random, mode);
-      state.log.push(M('log.order', { names: seats.map((s) => s.name).join(' → ') }));
       publish();
     },
   };

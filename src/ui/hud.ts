@@ -387,6 +387,15 @@ export class Hud {
           } else if (e.act === 'chase') this.queueBanner(`🛡️ ${t('banner.knightChase', { name: esc(p.name) })}`, p.color);
           break;
         }
+        case 'orderRoll':
+          sound.diceRoll();
+          break;
+        case 'firstPlayer': {
+          const p = s.players[e.p];
+          sound.yourTurn();
+          this.queueBanner(`👑 ${t('banner.first', { name: esc(p.name) })}`, p.color);
+          break;
+        }
         case 'barbarians': {
           sound.barbarians(e.won);
           const names = (list: number[]) => list.map((i) => esc(s.players[i].name)).join(', ');
@@ -603,6 +612,28 @@ export class Hud {
     }
   }
 
+  /** "Who goes first?": everyone's rolls, ties rolling again */
+  private orderHtml(s: GameState) {
+    const rounds = s.orderRounds ?? [[]];
+    const round = rounds[rounds.length - 1];
+    const contenders = s.orderContenders ?? [];
+    const prev = rounds.length > 1 ? rounds[rounds.length - 2] : null;
+    const rows = s.players.map((pl, i) => {
+      const mine = round.find((r) => r.p === i);
+      const earlier = rounds.slice(0, -1).map((r) => r.find((x) => x.p === i)).filter(Boolean) as { d: [number, number] }[];
+      const inRace = contenders.includes(i);
+      let cell: string;
+      if (mine) cell = `<span class="odice pop">${DIE[mine.d[0]]}${DIE[mine.d[1]]}</span><b>${mine.d[0] + mine.d[1]}</b>`;
+      else if (!inRace) cell = `<small class="muted">${t('order.out')}</small>`;
+      else if (i === this.seat) cell = `<button class="primary" data-a="orderRoll">${t('order.roll')}</button>`;
+      else cell = `<small class="muted rolling-dots">${t('order.waiting')}</small>`;
+      const history = earlier.length ? `<small class="ohist">${earlier.map((r) => r.d[0] + r.d[1]).join(' · ')}</small>` : '';
+      return `<div class="orow ${inRace ? '' : 'out'}" style="--pc:${pl.color}"><span class="dot"></span><span class="oname">${esc(pl.name)}${i === this.seat ? ` <small>${t('hud.you')}</small>` : ''}</span>${history}<span class="ocell">${cell}</span></div>`;
+    }).join('');
+    const tie = prev ? `<p class="otie">🎲 ${t('order.tie', { names: contenders.map((i) => esc(s.players[i].name)).join(', ') })}</p>` : '';
+    return `<div class="modal-bg"><div class="modal order-modal"><h3>👑 ${t('order.title')}</h3><p>${t('order.intro')}</p>${tie}<div class="orows">${rows}</div></div></div>`;
+  }
+
   /** the barbarian track: ship steps, defence vs strength */
   private barbarianHtml(s: GameState) {
     const step = s.barbarians ?? 0;
@@ -765,6 +796,7 @@ export class Hud {
     const m = this.modal;
     switch (a) {
       case 'roll': this.act({ type: 'roll' }); break;
+      case 'orderRoll': this.act({ type: 'orderRoll' }); break;
       case 'end': this.act({ type: 'endTurn' }); break;
       case 'mode': this.mode = this.mode === v ? null : (v as Mode); this.kfrom = null; break;
       case 'noSpot': sound.error(); this.toast(t(`noSpot.${v}`)); break;
@@ -1016,6 +1048,7 @@ export class Hud {
     const mine = s.current === this.seat;
     const who = { name: esc(cur.name) };
     if (s.phase === 'ended') return t('st.wins', { name: esc(s.players[s.winner!].name) });
+    if (s.phase === 'order') return t('st.order');
     if (s.phase === 'setup') {
       const road = s.setupNeed === 'road';
       return mine ? t(road ? 'st.placeRoad' : 'st.placeSettlement') : t(road ? 'st.placingRoad' : 'st.placingSettlement', who);
@@ -1202,6 +1235,7 @@ export class Hud {
     const wrap = (title: string, body: string, closable = true) =>
       `<div class="modal-bg"><div class="modal"><h3>${title}</h3>${body}${closable ? '<button class="close" data-a="close">✕</button>' : ''}</div></div>`;
 
+    if (s.phase === 'order') return this.orderHtml(s);
     if (s.phase === 'ended' && !this.recapClosed) {
       return `<div class="modal-bg"><div class="modal recap-modal">${recapHtml(s, this.seat)}<button class="close" data-a="close">✕</button></div></div>`;
     }

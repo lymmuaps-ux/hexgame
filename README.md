@@ -97,6 +97,10 @@ npm run build      # outputs static files to dist/
 Upload `dist/` to GitHub Pages, Netlify (drag & drop), Vercel, Cloudflare Pages, etc. It must be served over
 HTTPS (all of those do), because WebRTC requires it.
 
+## Who goes first
+At the start every player rolls two dice; the highest total goes first (ties roll again). Setup then goes around
+the table from that player and back in reverse, and the game continues in the same order.
+
 ## Rules summary
 First to **10 points** wins. Settlements are worth 1 point and cities 2. Longest Road (5+) and Strongest Guard (3+ Guards)
 are worth 2 each, and Monument cards 1 each. Roll the dice and tiles with that number produce resources. A 7 wakes the Raider:
